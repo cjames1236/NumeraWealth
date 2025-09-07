@@ -3,34 +3,48 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>NumeraWealth — Trader Mode</title>
+  <title>NumeraWealth — Trader (Cash App Access)</title>
+
+  <!-- React, Tailwind, Babel -->
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
 
   <style>
+    /* Trader dark theme + animation */
     .bg-trader {
-      background: radial-gradient(1200px 800px at 10% 10%, rgba(16,185,129,0.12), transparent 60%),
-                  radial-gradient(900px 700px at 90% 20%, rgba(6,182,212,0.12), transparent 60%),
-                  linear-gradient(135deg, #0b1220, #0a0f1a, #0b1220);
+      background:
+        radial-gradient(1200px 800px at 10% 10%, rgba(16,185,129,0.12), transparent 60%),
+        radial-gradient(900px 700px at 90% 20%, rgba(6,182,212,0.12), transparent 60%),
+        linear-gradient(135deg, #0b1220, #0a0f1a, #0b1220);
       background-size: 200% 200%;
       animation: gradientShift 18s ease-in-out infinite;
     }
     @keyframes gradientShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+
     .grid-overlay::before{
       content:""; position:absolute; inset:-100px;
-      background-image:linear-gradient(rgba(99,102,241,0.06) 1px,transparent 1px),
-                       linear-gradient(90deg, rgba(99,102,241,0.06) 1px,transparent 1px);
+      background-image:
+        linear-gradient(rgba(99,102,241,0.06) 1px,transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.06) 1px,transparent 1px);
       background-size:40px 40px,40px 40px; transform:translateZ(0);
       animation:gridDrift 40s linear infinite; pointer-events:none;
     }
     @keyframes gridDrift { 0%{transform:translate3d(0,0,0)} 100%{transform:translate3d(-80px,-40px,0)} }
+
     .scanlines::after{
       content:""; position:absolute; inset:0;
-      background:repeating-linear-gradient(to bottom, rgba(255,255,255,0.02), rgba(255,255,255,0.02) 1px, transparent 2px, transparent 4px);
+      background:repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.02),
+        rgba(255,255,255,0.02) 1px,
+        transparent 2px,
+        transparent 4px
+      );
       mix-blend-mode:soft-light; pointer-events:none;
     }
+
     .glass-card{
       background:rgba(13,18,30,.7); backdrop-filter:blur(10px);
       border:1px solid rgba(100,116,139,.25);
@@ -38,13 +52,27 @@
       transition: box-shadow .25s ease, border-color .25s ease, transform .2s ease;
     }
     .glass-card:hover{ border-color:rgba(16,185,129,.45); box-shadow:0 12px 36px rgba(16,185,129,.15), inset 0 0 0 1px rgba(16,185,129,.15); transform:translateY(-1px); }
-    .btn-primary{ background:linear-gradient(90deg,#10b981,#06b6d4); box-shadow:0 8px 24px rgba(16,185,129,.25), 0 2px 8px rgba(6,182,212,.15); transition:transform .12s ease, box-shadow .2s ease, opacity .2s ease; }
+
+    .btn-primary{
+      background:linear-gradient(90deg,#10b981,#06b6d4);
+      box-shadow:0 8px 24px rgba(16,185,129,.25), 0 2px 8px rgba(6,182,212,.15);
+      transition:transform .12s ease, box-shadow .2s ease, opacity .2s ease;
+    }
     .btn-primary:hover{ transform:translateY(-1px); box-shadow:0 10px 28px rgba(16,185,129,.3), 0 3px 10px rgba(6,182,212,.2); }
+
+    .btn-ghost{ border:1px solid rgba(148,163,184,.25); background:rgba(30,41,59,.6); transition: border-color .2s, transform .12s; }
+    .btn-ghost:hover{ border-color:rgba(16,185,129,.5); transform:translateY(-1px); }
+
     .input{ background:rgba(15,23,42,.6); border:1px solid rgba(148,163,184,.25); color:#e5e7eb; transition:border-color .2s, box-shadow .2s; }
     .input::placeholder{ color:rgba(148,163,184,.6) }
     .input:focus{ outline:none; border-color:rgba(16,185,129,.6); box-shadow:0 0 0 3px rgba(16,185,129,.2) }
+
     .pill{ border:1px solid rgba(148,163,184,.25); background:rgba(30,41,59,.6) }
-    .master { color:#34d399; font-weight:600; } /* highlight for master numbers */
+    .master { color:#34d399; font-weight:600; }
+
+    .link { color:#22d3ee; text-decoration: underline; }
+    .badge { font-size:.75rem; padding:.15rem .5rem; border-radius:.5rem; border:1px solid rgba(148,163,184,.25); background:rgba(30,41,59,.6) }
+    .modal-bg { background:rgba(0,0,0,.65); }
   </style>
 </head>
 
@@ -53,56 +81,81 @@
   <div id="root" class="relative z-10 min-h-screen flex items-center justify-center p-4"></div>
 
   <script type="text/babel">
-    const { useState } = React;
+    const { useState, useEffect } = React;
+
+    /* ===== Cash App settings ===== */
+    const CASH_TAG = "$CurtisGieseke";
+    const CASH_LINK = "https://cash.app/" + CASH_TAG; // e.g., https://cash.app/$CurtisGieseke
+    const PRICE_TEXT = "$0.99 for 14 days";
+    const ACCESS_KEY = "nw:access:until"; // localStorage key
+    const ACCESS_DAYS = 14;
 
     /* ===== Numerology core ===== */
     const MASTER = new Set([11,22,33]);
     const LETTER_VALUES = {A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9,J:1,K:2,L:3,M:4,N:5,O:6,P:7,Q:8,R:9,S:1,T:2,U:3,V:4,W:5,X:6,Y:7,Z:8};
     const VOWELS = new Set(['A','E','I','O','U']);
+
     const onlyLetters = (s)=> (s||'').toUpperCase().replace(/[^A-Z\s'-]/g,'');
     const splitWords = (s)=> onlyLetters(s).split(/[ \-']+/).filter(Boolean);
     const sumDigits = (n)=> String(Math.abs(Number(n)||0)).split('').reduce((s,d)=>s+Number(d),0);
     const reduceNumber = (n)=>{ n=Math.abs(Number(n)||0); while(n>9 && !MASTER.has(n)) n=sumDigits(n); return n; };
     const reduceComponents = (...nums)=> reduceNumber(nums.map(reduceNumber).reduce((a,b)=>a+b,0));
 
-    // contextual Y per word
+    // Contextual Y handling per word
     const isVowelY = (word, i)=>{
       const c=[...word], prev=c[i-1], next=c[i+1];
       const nextV = next && VOWELS.has(next); const prevV = prev && VOWELS.has(prev); const prevC = prev && !prevV;
       if (i===0 && nextV) return false; // Ya/Yo/Yu
       if (nextV) return false;          // followed by vowel
-      if (prevC && !nextV) return true; // between consonants
+      if (prevC && !nextV) return true; // between consonants behaves like vowel
       if (!prevV && !nextV) return true;// lone vowel sound
       return false;
     };
+
     const classifyNameLetters = (name)=>{
-      const words=splitWords(name); let vowelsSum=0, consonantsSum=0, allSum=0;
-      for (const w of words){ for (let i=0;i<w.length;i++){ const ch=w[i];
-        if (ch==='Y'){ if (isVowelY(w,i)) vowelsSum+=LETTER_VALUES[ch]||0; else consonantsSum+=LETTER_VALUES[ch]||0; }
-        else if (VOWELS.has(ch)) vowelsSum+=LETTER_VALUES[ch]||0; else consonantsSum+=LETTER_VALUES[ch]||0;
-        allSum+=LETTER_VALUES[ch]||0;
-      }}
+      const words=splitWords(name);
+      let vowelsSum=0, consonantsSum=0, allSum=0;
+      for (const w of words){
+        for (let i=0;i<w.length;i++){
+          const ch=w[i];
+          if (ch==='Y'){
+            if (isVowelY(w,i)) vowelsSum+=LETTER_VALUES[ch]||0; else consonantsSum+=LETTER_VALUES[ch]||0;
+          } else if (VOWELS.has(ch)) {
+            vowelsSum+=LETTER_VALUES[ch]||0;
+          } else {
+            consonantsSum+=LETTER_VALUES[ch]||0;
+          }
+          allSum+=LETTER_VALUES[ch]||0;
+        }
+      }
       return {vowelsSum, consonantsSum, allSum};
     };
 
-    // date helpers (America/Chicago)
+    // Date helpers (America/Chicago)
     const todayChicago = ()=>{
       const parts = new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
       const get = (t)=> Number(parts.find(p=>p.type===t).value);
-      const m=get('month'), d=get('day'), y=get('year'); return {m,d,y,str:`${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}`};
+      const m=get('month'), d=get('day'), y=get('year');
+      return {m,d,y,str:`${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}`};
     };
+
     const parseBirth = (s)=>{
       const a=(s||'').trim().split('/'); if (a.length!==3) return null;
-      const [M,D,Y]=a.map(Number); if (!M||!D||!Y||M<1||M>12||Y<1800||Y>3000) return null;
-      const maxD=new Date(Y,M,0).getDate(); if (D<1||D>maxD) return null; return {m:M,d:D,y:Y};
+      const [M,D,Y]=a.map(Number);
+      if (!M||!D||!Y||M<1||M>12||Y<1800||Y>3000) return null;
+      const maxD=new Date(Y,M,0).getDate(); if (D<1||D>maxD) return null;
+      return {m:M,d:D,y:Y};
     };
+
     const validateFullBirthName = (name)=>{
-      const words=splitWords(name); if (words.length<3) return {ok:false,msg:'Enter your full birth name: First Middle Last.'};
-      const mids=words.slice(1,-1); if (mids.some(w=>w.length<2)) return {ok:false,msg:'Please enter your FULL middle name (no initials).'};
+      const words=splitWords(name);
+      if (words.length<3) return {ok:false,msg:'Enter your full birth name: First Middle Last.'};
+      const mids=words.slice(1,-1);
+      if (mids.some(w=>w.length<2)) return {ok:false,msg:'Please enter your FULL middle name (no initials).'};
       return {ok:true,msg:''};
     };
 
-    // core numbers
+    // Core numbers
     const calcLifePath = (b)=> reduceComponents(b.m,b.d,b.y);
     const calcExpression = (name)=> { const {allSum}=classifyNameLetters(name); return reduceNumber(allSum); };
     const calcSoulUrge  = (name)=> { const {vowelsSum}=classifyNameLetters(name); return reduceNumber(vowelsSum); };
@@ -111,7 +164,7 @@
     const calcPersonalMonth =(t,b)=> reduceNumber(calcPersonalYear(t,b)+t.m);
     const calcPersonalDay   =(t,b)=> reduceNumber(calcPersonalMonth(t,b)+t.d);
 
-    /* ===== Forecasts (plain English) ===== */
+    /* ===== Finance forecasts ===== */
     const PD_FINANCE = {
       1: "Initiation day: open pilot trades, start positions, or launch a plan. Keep risk defined.",
       2: "Partnership day: collaborate, hedge, or build balanced strategies. Patience wins.",
@@ -151,7 +204,7 @@
     const getDailyFinanceForecast   = (pd,lp)=> (PD_FINANCE[pd]||"Balanced day: follow the plan and manage risk.") + (LP_TINT[lp]||"");
     const getMonthlyFinanceForecast = (pm,lp)=> (PM_FINANCE[pm]||"Steady month: compound small advantages.") + (LP_TINT[lp]||"");
 
-    // formatting helpers
+    // Formatting helpers
     const fmtNum = (n)=> MASTER.has(n) ? `${n} (Master)` : String(n);
     const masterHighlights = (r)=>{
       const tags = [];
@@ -165,29 +218,107 @@
       return tags.length ? tags.join(", ") : "None";
     };
 
-    /* ===== App ===== */
+    /* ===== Access Control (client-side, honor system) ===== */
+    const now = () => Date.now();
+    const daysToMs = d => d*24*60*60*1000;
+
+    function getAccessUntil(){
+      const raw = localStorage.getItem(ACCESS_KEY);
+      const t = raw ? Number(raw) : 0;
+      return Number.isFinite(t) ? t : 0;
+    }
+    function hasActiveAccess(){
+      return getAccessUntil() > now();
+    }
+    function remainingDays(){
+      const ms = getAccessUntil() - now();
+      return ms > 0 ? Math.ceil(ms / (24*60*60*1000)) : 0;
+    }
+    function activateAccess(){
+      const until = now() + daysToMs(ACCESS_DAYS);
+      localStorage.setItem(ACCESS_KEY, String(until));
+      return until;
+    }
+    function clearAccess(){
+      localStorage.removeItem(ACCESS_KEY);
+    }
+
+    /* ===== UI Components ===== */
+    const Card = ({title,value,children}) => (
+      <div className="rounded-2xl p-4 pill">
+        <div className="text-xs uppercase tracking-wide text-slate-400">{title}</div>
+        <div className="text-lg md:text-xl font-semibold text-slate-100 whitespace-pre-wrap leading-relaxed mt-1">{value}</div>
+        {children}
+      </div>
+    );
+
+    const Paywall = ({onActivated})=>{
+      const handleActivate = ()=>{
+        activateAccess();
+        onActivated?.();
+      };
+      return (
+        <div className="fixed inset-0 modal-bg flex items-center justify-center p-4">
+          <div className="glass-card rounded-2xl max-w-lg w-full p-6">
+            <h2 className="text-2xl font-bold mb-2">Unlock Access</h2>
+            <p className="text-slate-300 mb-4">
+              Send <span className="font-semibold">{PRICE_TEXT}</span> to <span className="font-semibold">{CASH_TAG}</span> on Cash App
+              to unlock <strong>14 days</strong> of use.
+            </p>
+
+            <div className="grid gap-3">
+              <a href={CASH_LINK} target="_blank" rel="noreferrer" className="btn-primary text-center text-white py-2 rounded-lg">
+                Pay with Cash App
+              </a>
+              <button onClick={handleActivate} className="btn-ghost text-white py-2 rounded-lg">
+                Activate 14-Day Access
+              </button>
+              <p className="text-xs text-slate-400 mt-1">
+                This is a lightweight, client-side activation (honor system). For strict verification, a backend can be added later.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     const App = () => {
       const today = todayChicago();
       const [name,setName] = useState('');
       const [birthdate,setBirthdate] = useState('');
       const [results,setResults] = useState(null);
       const [error,setError] = useState('');
+      const [showPay,setShowPay] = useState(!hasActiveAccess());
+      const [daysLeft,setDaysLeft] = useState(remainingDays());
+
+      useEffect(()=>{
+        setDaysLeft(remainingDays());
+      },[]);
+
+      const softRateLimitOk = () => {
+        const nowMs = Date.now();
+        const key = "nw:lastCalc";
+        const last = Number(localStorage.getItem(key) || 0);
+        if (nowMs - last < 1200) return false; // 1.2s between clicks
+        localStorage.setItem(key, String(nowMs));
+        return true;
+      };
 
       const handleCalculate = () => {
         setError('');
+        if (!hasActiveAccess()) { setShowPay(true); return; }
+        if (!softRateLimitOk()) return setError('One moment... try again.');
         if (!birthdate || !name) { setError('Please enter both name and birthdate.'); return; }
         const valid = validateFullBirthName(name); if (!valid.ok) { setError(valid.msg); return; }
         const b = parseBirth(birthdate); if (!b) { setError('Enter a valid birthdate (MM/DD/YYYY).'); return; }
 
         const lifePath    = calcLifePath(b);
-        const { vowelsSum, consonantsSum, allSum } = classifyNameLetters(name);
-        const expression  = reduceNumber(allSum);
-        const soulUrge    = reduceNumber(vowelsSum);
-        const personality = { compound: consonantsSum, reduced: reduceNumber(consonantsSum) };
+        const expression  = calcExpression(name);
+        const soulUrge    = calcSoulUrge(name);
+        const personality = calcPersonality(name);
         const py = calcPersonalYear(today,b);
         const pm = calcPersonalMonth(today,b);
         const pd = calcPersonalDay(today,b);
-
         const dailyForecast   = getDailyFinanceForecast(pd, lifePath);
         const monthlyForecast = getMonthlyFinanceForecast(pm, lifePath);
 
@@ -197,37 +328,84 @@
       const onNameChange  = (e)=>{ setName(e.target.value); setResults(null); };
       const onBirthChange = (e)=>{ setBirthdate(e.target.value); setResults(null); };
 
+      const handleActivated = ()=>{
+        setShowPay(false);
+        setDaysLeft(remainingDays());
+      };
+
+      const clearPass = ()=>{
+        clearAccess();
+        setDaysLeft(0);
+        setShowPay(true);
+      };
+
       return (
         <div className="w-full max-w-4xl">
           <div className="glass-card rounded-3xl p-6 md:p-8">
-            <div className="flex items-center justify-center gap-3 mb-2">
-              <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg pill">
-                {/* tiny "candlestick" icon */}
-                <svg viewBox="0 0 24 24" className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="1.7">
-                  <path d="M7 4v16m0-10h4m-4 0v-4m4 4v4m6-8v16m0-10h-4m4 0v-4m-4 4v4"/>
-                </svg>
-              </span>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">NumeraWealth <span className="text-emerald-400">Trader</span></h1>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg pill">
+                  {/* tiny "candlestick" icon */}
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="1.7">
+                    <path d="M7 4v16m0-10h4m-4 0v-4m4 4v4m6-8v16m0-10h-4m4 0v-4m-4 4v4"/>
+                  </svg>
+                </span>
+                <h1 className="text-2xl md:text-3xl font-bold tracking-tight">NumeraWealth <span className="text-emerald-400">Trader</span></h1>
+              </div>
+              <div className="flex items-center gap-2">
+                {hasActiveAccess()
+                  ? <span className="badge">Access: {daysLeft} day{daysLeft===1?'':'s'} left</span>
+                  : <span className="badge">Locked • {PRICE_TEXT}</span>
+                }
+                {hasActiveAccess() && (
+                  <button onClick={clearPass} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">Reset</button>
+                )}
+              </div>
             </div>
             <p className="text-center text-slate-400 mb-6">Enter your <strong>full birth name</strong> (First <u>Middle</u> Last) and birthdate.</p>
 
             <div className="grid md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300">Full Birth Name (Middle required)</label>
-                <input value={name} onChange={onNameChange} placeholder="First Middle Last" className="input mt-1 block w-full rounded-lg p-2"/>
+                <input
+                  value={name}
+                  onChange={onNameChange}
+                  placeholder="First Middle Last"
+                  className="input mt-1 block w-full rounded-lg p-2"
+                />
                 <p className="text-xs text-slate-500 mt-1">No initials. Hyphens/apostrophes are okay.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300">Birthdate (MM/DD/YYYY)</label>
-                <input value={birthdate} onChange={onBirthChange} placeholder="MM/DD/YYYY" className="input mt-1 block w-full rounded-lg p-2"/>
+                <input
+                  value={birthdate}
+                  onChange={onBirthChange}
+                  placeholder="MM/DD/YYYY"
+                  className="input mt-1 block w-full rounded-lg p-2"
+                />
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <a className="btn-ghost text-center py-2 rounded-lg" href={CASH_LINK} target="_blank" rel="noreferrer">
+                Pay {PRICE_TEXT} on Cash App ({CASH_TAG})
+              </a>
+              <button onClick={()=>setShowPay(true)} className="btn-primary text-white py-2 rounded-lg">
+                Activate / Manage Access
+              </button>
             </div>
 
             <button onClick={handleCalculate} className="btn-primary w-full text-white py-2.5 rounded-lg">Calculate</button>
 
+            {!hasActiveAccess() && (
+              <div className="mt-3 text-center text-slate-400 text-sm">
+                Access required to calculate. Pay with Cash App, then click “Activate / Manage Access”.
+              </div>
+            )}
+
             {error && <div className="mt-4 p-3 rounded-lg bg-red-900/40 text-red-200 border border-red-500/30">{error}</div>}
 
-            {results && !error && (
+            {results && hasActiveAccess() && !error && (
               <div className="mt-6 grid gap-4">
                 <div className="grid md:grid-cols-3 gap-4">
                   <Card title="Life Path" value={<span className={MASTER.has(results.lifePath)?'master':''}>{fmtNum(results.lifePath)}</span>} />
@@ -254,16 +432,11 @@
               </div>
             )}
           </div>
+
+          {showPay && <Paywall onActivated={handleActivated}/>}
         </div>
       );
     };
-
-    const Card = ({title,value}) => (
-      <div className="rounded-2xl p-4 pill">
-        <div className="text-xs uppercase tracking-wide text-slate-400">{title}</div>
-        <div className="text-lg md:text-xl font-semibold text-slate-100 whitespace-pre-wrap leading-relaxed mt-1">{value}</div>
-      </div>
-    );
 
     ReactDOM.render(<App/>, document.getElementById('root'));
   </script>

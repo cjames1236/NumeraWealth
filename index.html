@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NumeraWealth</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
+</head>
+<body class="bg-gray-100">
+  <div id="root" class="min-h-screen flex items-center justify-center p-4"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    // --- Numerology constants/helpers ---
+    const MASTER = new Set([11,22,33]);
+    const LETTER_VALUES = {
+      A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9,
+      J:1,K:2,L:3,M:4,N:5,O:6,P:7,Q:8,R:9,
+      S:1,T:2,U:3,V:4,W:5,X:6,Y:7,Z:8
+    };
+    const VOWELS = new Set(['A','E','I','O','U']);
+
+    const onlyLetters = (s) => (s||'').toUpperCase().replace(/[^A-Z\s'-]/g,'');
+    const splitWords = (s) => onlyLetters(s).split(/[ \-']+/).filter(Boolean);
+
+    const sumDigits = (n) => String(Math.abs(Number(n)||0)).split('').reduce((s,d)=>s+Number(d),0);
+    const reduceNumber = (n) => {
+      n = Math.abs(Number(n)||0);
+      while (n > 9 && !MASTER.has(n)) n = sumDigits(n);
+      return n;
+    };
+    const reduceComponents = (...nums) => reduceNumber(nums.map(reduceNumber).reduce((a,b)=>a+b,0));
+
+    // Contextual Y (per word)
+    const isVowelY = (word, idx) => {
+      const chars = [...word];
+      const prev = chars[idx-1];
+      const next = chars[idx+1];
+      const nextIsVowel = next && VOWELS.has(next);
+      const prevIsVowel = prev && VOWELS.has(prev);
+      const prevIsConsonant = prev && !prevIsVowel;
+
+      if (idx === 0 && nextIsVowel) return false; // Ya/Yo/Yu
+      if (nextIsVowel) return false;              // followed by vowel
+      if (prevIsConsonant && !nextIsVowel) return true;
+      if (!prevIsVowel && !nextIsVowel) return true;
+      return false;
+    };
+
+    const classifyNameLetters = (name) => {
+      const words = splitWords(name);
+      let vowelsSum = 0, consonantsSum = 0, allSum = 0;
+      for (const w of words) {
+        const chars = [...w];
+        chars.forEach((ch,i) => {
+          if (ch==='Y') {
+            const yIsVowel = isVowelY(w,i);
+            if (yIsVowel) vowelsSum += LETTER_VALUES[ch]||0;
+            else consonantsSum += LETTER_VALUES[ch]||0;
+          } else if (VOWELS.has(ch)) {
+            vowelsSum += LETTER_VALUES[ch]||0;
+          } else {
+            consonantsSum += LETTER_VALUES[ch]||0;
+          }
+          allSum += LETTER_VALUES[ch]||0;
+        });
+      }
+      return { vowelsSum, consonantsSum, allSum };
+    };
+
+    // Today in America/Chicago
+    const todayChicago = () => {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago', year:'numeric', month:'2-digit', day:'2-digit'
+      }).formatToParts(new Date());
+      const get = (t) => Number(parts.find(p=>p.type===t).value);
+      const m = get('month'), d = get('day'), y = get('year');
+      return { m, d, y, str: `${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}` };
+    };
+
+    // Parse birthdate
+    const parseBirth = (s) => {
+      const a = (s||'').trim().split('/');
+      if (a.length!==3) return null;
+      const [M,D,Y] = a.map(Number);
+      if (!M||!D||!Y||M<1||M>12||Y<1800||Y>3000) return null;
+      const maxD = new Date(Y,M,0).getDate();
+      if (D<1||D>maxD) return null;
+      return { m:M, d:D, y:Y };
+    };
+
+    // Core numbers
+    const calcLifePath = (b) => reduceComponents(b.m,b.d,b.y);
+    const calcExpression = (name) => {
+      const { allSum } = classifyNameLetters(name);
+      return reduceNumber(allSum);
+    };
+    const calcSoulUrge = (name) => {
+      const { vowelsSum } = classifyNameLetters(name);
+      return reduceNumber(vowelsSum);
+    };
+    const calcPersonality = (name) => {
+      const { consonantsSum } = classifyNameLetters(name);
+      return { compound: consonantsSum, reduced: reduceNumber(consonantsSum) };
+    };
+
+    const calcPersonalYear = (today,b) =>
+      reduceNumber(reduceNumber(b.m)+reduceNumber(b.d)+reduceNumber(today.y));
+    const calcPersonalMonth = (today,b) =>
+      reduceNumber(calcPersonalYear(today,b)+today.m);
+    const calcPersonalDay = (today,b) =>
+      reduceNumber(calcPersonalMonth(today,b)+today.d);
+
+    // --- Forecast logic: short, day-focused ---
+    const PD_LINES = {
+      1: "New starts and decisive actions land well. Lead, don’t wait.",
+      2: "Cooperate, pair up, and be patient; soft power wins.",
+      3: "Speak up and create—great for pitches, content, and outreach.",
+      4: "Plan, organize, and finish; structure beats speed today.",
+      5: "Stay flexible; quick pivots open opportunities.",
+      6: "Handle responsibilities and relationships; tidy up loose ends.",
+      7: "Think, research, and trust your read; protect focus.",
+      8: "Push goals and negotiations; results favor clear metrics.",
+      9: "Wrap things, edit, release; generosity returns dividends.",
+      11:"Follow the nudge; insight + timing align.",
+      22:"Lay foundations that scale; small bricks, big blueprint.",
+      33:"Lead by helping; teach, mentor, uplift."
+    };
+    const LP_FLAVOR = {
+      1:"Remember: your Life Path favors bold initiation.",
+      2:"Remember: your Life Path favors partnership and nuance.",
+      3:"Remember: your Life Path favors expression and creativity.",
+      4:"Remember: your Life Path favors discipline and process.",
+      5:"Remember: your Life Path favors adaptability and change.",
+      6:"Remember: your Life Path favors stewardship and harmony.",
+      7:"Remember: your Life Path favors analysis and timing.",
+      8:"Remember: your Life Path favors ambition and strategy.",
+      9:"Remember: your Life Path favors perspective and service.",
+      11:"Remember: your Life Path favors intuition and inspiration.",
+      22:"Remember: your Life Path builds durable systems.",
+      33:"Remember: your Life Path multiplies value through service."
+    };
+
+    const getDailyForecast = (pd, lp) => {
+      const core = PD_LINES[pd] || "Stay balanced and act when signals align.";
+      const flavor = LP_FLAVOR[lp] ? ` ${LP_FLAVOR[lp]}` : "";
+      return core + flavor;
+    };
+
+    // --- App ---
+    const App = () => {
+      const today = todayChicago();
+      const [name,setName] = useState('');
+      const [birthdate,setBirthdate] = useState('');
+      const [results,setResults] = useState(null);
+      const [error,setError] = useState('');
+
+      const handleCalculate = () => {
+        setError('');
+        if (!birthdate || !name) { setError('Please enter both name and birthdate.'); return; }
+        const b = parseBirth(birthdate);
+        if (!b) { setError('Enter a valid birthdate (MM/DD/YYYY).'); return; }
+
+        const lifePath = calcLifePath(b);
+        const expression = calcExpression(name);
+        const soulUrge = calcSoulUrge(name);
+        const personality = calcPersonality(name);
+        const py = calcPersonalYear(today,b);
+        const pm = calcPersonalMonth(today,b);
+        const pd = calcPersonalDay(today,b);
+        const forecast = getDailyForecast(pd, lifePath);
+
+        setResults({
+          lifePath, expression, soulUrge, personality, py, pm, pd,
+          todayStr: today.str, forecast
+        });
+      };
+
+      // Clear stale results when user edits inputs (optional UX)
+      const onNameChange = (e) => { setName(e.target.value); setResults(null); };
+      const onBirthChange = (e) => { setBirthdate(e.target.value); setResults(null); };
+
+      return (
+        <div className="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-6">
+          <h1 className="text-3xl font-bold text-center mb-4">NumeraWealth</h1>
+
+          <div className="grid md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium">Full Name</label>
+              <input value={name} onChange={onNameChange}
+                className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Birthdate (MM/DD/YYYY)</label>
+              <input value={birthdate} onChange={onBirthChange}
+                className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
+            </div>
+          </div>
+
+          <button
+            onClick={handleCalculate}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
+          >
+            Calculate
+          </button>
+
+          {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
+
+          {results && !error && (
+            <div className="mt-6 grid gap-4">
+              <Card title="Life Path" value={results.lifePath}/>
+              <Card title="Expression / Destiny" value={results.expression}/>
+              <Card title="Soul Urge" value={results.soulUrge}/>
+              <Card title="Personality" value={`${results.personality.compound} / ${results.personality.reduced}`}/>
+              <Card title="Personal Year" value={results.py}/>
+              <Card title="Personal Month" value={results.pm}/>
+              <Card title="Personal Day" value={results.pd}/>
+              <Card title="Today" value={results.todayStr}/>
+              <Card title="Daily Forecast" value={results.forecast}/>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const Card = ({title,value}) => (
+      <div className="p-4 border rounded shadow-sm">
+        <div className="text-sm text-gray-500">{title}</div>
+        <div className="text-lg font-semibold whitespace-pre-wrap">{value}</div>
+      </div>
+    );
+
+    ReactDOM.render(<App/>, document.getElementById('root'));
+  </script>
+</body>
+</html>

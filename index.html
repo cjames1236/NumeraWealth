@@ -44,6 +44,7 @@
     .input::placeholder{ color:rgba(148,163,184,.6) }
     .input:focus{ outline:none; border-color:rgba(16,185,129,.6); box-shadow:0 0 0 3px rgba(16,185,129,.2) }
     .pill{ border:1px solid rgba(148,163,184,.25); background:rgba(30,41,59,.6) }
+    .master { color:#34d399; font-weight:600; } /* highlight for master numbers */
   </style>
 </head>
 
@@ -54,7 +55,7 @@
   <script type="text/babel">
     const { useState } = React;
 
-    // ===== Numerology core (unchanged) =====
+    /* ===== Numerology core ===== */
     const MASTER = new Set([11,22,33]);
     const LETTER_VALUES = {A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9,J:1,K:2,L:3,M:4,N:5,O:6,P:7,Q:8,R:9,S:1,T:2,U:3,V:4,W:5,X:6,Y:7,Z:8};
     const VOWELS = new Set(['A','E','I','O','U']);
@@ -63,10 +64,16 @@
     const sumDigits = (n)=> String(Math.abs(Number(n)||0)).split('').reduce((s,d)=>s+Number(d),0);
     const reduceNumber = (n)=>{ n=Math.abs(Number(n)||0); while(n>9 && !MASTER.has(n)) n=sumDigits(n); return n; };
     const reduceComponents = (...nums)=> reduceNumber(nums.map(reduceNumber).reduce((a,b)=>a+b,0));
+
+    // contextual Y per word
     const isVowelY = (word, i)=>{
       const c=[...word], prev=c[i-1], next=c[i+1];
       const nextV = next && VOWELS.has(next); const prevV = prev && VOWELS.has(prev); const prevC = prev && !prevV;
-      if (i===0 && nextV) return false; if (nextV) return false; if (prevC && !nextV) return true; if (!prevV && !nextV) return true; return false;
+      if (i===0 && nextV) return false; // Ya/Yo/Yu
+      if (nextV) return false;          // followed by vowel
+      if (prevC && !nextV) return true; // between consonants
+      if (!prevV && !nextV) return true;// lone vowel sound
+      return false;
     };
     const classifyNameLetters = (name)=>{
       const words=splitWords(name); let vowelsSum=0, consonantsSum=0, allSum=0;
@@ -77,6 +84,8 @@
       }}
       return {vowelsSum, consonantsSum, allSum};
     };
+
+    // date helpers (America/Chicago)
     const todayChicago = ()=>{
       const parts = new Intl.DateTimeFormat('en-US',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
       const get = (t)=> Number(parts.find(p=>p.type===t).value);
@@ -92,6 +101,8 @@
       const mids=words.slice(1,-1); if (mids.some(w=>w.length<2)) return {ok:false,msg:'Please enter your FULL middle name (no initials).'};
       return {ok:true,msg:''};
     };
+
+    // core numbers
     const calcLifePath = (b)=> reduceComponents(b.m,b.d,b.y);
     const calcExpression = (name)=> { const {allSum}=classifyNameLetters(name); return reduceNumber(allSum); };
     const calcSoulUrge  = (name)=> { const {vowelsSum}=classifyNameLetters(name); return reduceNumber(vowelsSum); };
@@ -100,12 +111,61 @@
     const calcPersonalMonth =(t,b)=> reduceNumber(calcPersonalYear(t,b)+t.m);
     const calcPersonalDay   =(t,b)=> reduceNumber(calcPersonalMonth(t,b)+t.d);
 
-    const PD_FINANCE = {1:"Initiation day: open pilots, start positions, or launch a plan. Keep risk defined.",2:"Partnership day: collaborate, hedge, or build spreads. Patience beats forcing trades.",3:"Communication day: pitch ideas, journal setups, review trade plans; light sizing.",4:"Structure day: tighten risk, rebalance, pay down debt, and build checklists.",5:"Volatility day: trade momentum or scalp, but cap size and respect stops.",6:"Income day: focus on cash flow—dividends, covered calls, budgets, repairs.",7:"Research day: backtest, study tape, wait for A+ setups; fewer trades, higher quality.",8:"Power day: push negotiations, scale winners, review KPIs; results-driven moves.",9:"Completion day: harvest profits, cut laggards, tidy accounts, and reset.",11:"Insight day: small asymmetric shots from clear signals; protect capital.",22:"Build day: automate, systematize, and place long-term bricks that compound.",33:"Service day: mentor, support customers, strengthen relationships that monetize later."};
-    const PM_FINANCE = {1:"Month of fresh starts: initiate projects, set targets, and define risk frameworks.",2:"Month of alignment: build partnerships, negotiate terms, and refine hedges.",3:"Month of visibility: ship content, pitch offers, expand top-of-funnel.",4:"Month of discipline: optimize costs, strengthen processes, and document SOPs.",5:"Month of agility: test new channels, iterate fast, but avoid overtrading.",6:"Month of maintenance: protect cash flow, nurture clients, upgrade essentials.",7:"Month of research: backtest, study markets, and prepare systems quietly.",8:"Month of execution: pursue scale, performance reviews, and ROI milestones.",9:"Month of pruning: exit weak lines, consolidate, and finalize outstanding tasks.",11:"Month of insight: ideate, prototype selectively, validate signals.",22:"Month of building: lay scalable foundations, infra, automation.",33:"Month of service: deepen relationships, deliver value, build goodwill."};
-    const LP_TINT = {1:" Favor bold but measured starts.",2:" Favor cooperative deals and nuance.",3:" Favor brand, comms, and creative angles.",4:" Favor process, discipline, and durability.",5:" Favor flexibility and adaptive edges.",6:" Favor stewardship, quality, and loyalty.",7:" Favor analysis, timing, and patience.",8:" Favor ambition, metrics, and leverage.",9:" Favor perspective, pruning, and impact.",11:" Favor intuition paired with validation.",22:" Favor scalable systems and foundations.",33:" Favor teaching and value-through-service."};
+    /* ===== Finance forecasts (no abbreviations) ===== */
+    const PD_FINANCE = {
+      1: "Initiation day: open pilot trades, start positions, or launch a plan. Keep risk defined.",
+      2: "Partnership day: collaborate, hedge, or build balanced strategies. Patience wins.",
+      3: "Communication day: share ideas, write notes, review trade plans; keep position sizes light.",
+      4: "Structure day: tighten risk, rebalance, reduce debt, and build checklists.",
+      5: "Volatility day: trade momentum or quick opportunities, but cap size and respect stops.",
+      6: "Income day: focus on cash flow—dividends, covered calls, budgets, and necessary repairs.",
+      7: "Research day: backtest, study the market, wait for A+ setups; fewer trades, higher quality.",
+      8: "Power day: push negotiations, scale winners, review performance metrics.",
+      9: "Completion day: harvest profits, cut weak positions, clean up accounts, and reset.",
+      11:"Insight day: take small, high-upside opportunities from clear signals; protect capital.",
+      22:"Build day: automate, systematize, and lay long-term foundations that compound.",
+      33:"Service day: mentor, support clients, and strengthen relationships that create value."
+    };
+    const PM_FINANCE = {
+      1: "Month of fresh starts: initiate projects, set targets, and define your risk framework.",
+      2: "Month of alignment: build partnerships, negotiate terms, and refine hedges.",
+      3: "Month to be seen: share ideas, publish content, and expand your audience.",
+      4: "Month of discipline: control costs, improve processes, and document procedures.",
+      5: "Month of agility: test new channels, iterate quickly, and avoid overtrading.",
+      6: "Month of maintenance: protect cash flow, nurture clients, and upgrade essentials.",
+      7: "Month of research: backtest, study markets, and quietly prepare systems.",
+      8: "Month of execution: pursue scale, performance reviews, and clear return goals.",
+      9: "Month of pruning: exit weak lines, consolidate, and finalize outstanding tasks.",
+      11:"Month of insight: generate ideas, prototype carefully, and validate signals.",
+      22:"Month of building: create scalable foundations, infrastructure, and automation.",
+      33:"Month of service: deepen relationships, deliver value, and build goodwill."
+    };
+    const LP_TINT = {
+      1:" Favor bold but measured starts.", 2:" Favor cooperation and nuance.",
+      3:" Favor creativity and clear communication.", 4:" Favor process and durability.",
+      5:" Favor flexibility and adaptation.", 6:" Favor stewardship and quality.",
+      7:" Favor analysis, timing, and patience.", 8:" Favor ambition and metrics.",
+      9:" Favor perspective and pruning.", 11:" Favor intuition with verification.",
+      22:" Favor scalable systems and foundations.", 33:" Favor teaching and service."
+    };
     const getDailyFinanceForecast   = (pd,lp)=> (PD_FINANCE[pd]||"Balanced day: follow the plan and manage risk.") + (LP_TINT[lp]||"");
     const getMonthlyFinanceForecast = (pm,lp)=> (PM_FINANCE[pm]||"Steady month: compound small advantages.") + (LP_TINT[lp]||"");
 
+    // formatting helpers
+    const fmtNum = (n)=> MASTER.has(n) ? `${n} (Master)` : String(n);
+    const masterHighlights = (r)=>{
+      const tags = [];
+      if (MASTER.has(r.lifePath)) tags.push(`Life Path ${r.lifePath}`);
+      if (MASTER.has(r.expression)) tags.push(`Expression ${r.expression}`);
+      if (MASTER.has(r.soulUrge)) tags.push(`Soul Urge ${r.soulUrge}`);
+      if (MASTER.has(r.personality.reduced)) tags.push(`Personality ${r.personality.reduced}`);
+      if (MASTER.has(r.py)) tags.push(`Personal Year ${r.py}`);
+      if (MASTER.has(r.pm)) tags.push(`Personal Month ${r.pm}`);
+      if (MASTER.has(r.pd)) tags.push(`Personal Day ${r.pd}`);
+      return tags.length ? tags.join(", ") : "None";
+    };
+
+    /* ===== App ===== */
     const App = () => {
       const today = todayChicago();
       const [name,setName] = useState('');
@@ -153,7 +213,7 @@
               <div>
                 <label className="block text-sm font-medium text-slate-300">Full Birth Name (Middle required)</label>
                 <input value={name} onChange={onNameChange} placeholder="First Middle Last" className="input mt-1 block w-full rounded-lg p-2"/>
-                <p className="text-xs text-slate-500 mt-1">No initials. Hyphens/apostrophes OK.</p>
+                <p className="text-xs text-slate-500 mt-1">No initials. Hyphens/apostrophes are okay.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300">Birthdate (MM/DD/YYYY)</label>
@@ -168,20 +228,23 @@
             {results && !error && (
               <div className="mt-6 grid gap-4">
                 <div className="grid md:grid-cols-3 gap-4">
-                  <Card title="Life Path" value={results.lifePath}/>
-                  <Card title="Expression / Destiny" value={results.expression}/>
-                  <Card title="Soul Urge" value={results.soulUrge}/>
+                  <Card title="Life Path" value={<span className={MASTER.has(results.lifePath)?'master':''}>{fmtNum(results.lifePath)}</span>} />
+                  <Card title="Expression / Destiny" value={<span className={MASTER.has(results.expression)?'master':''}>{fmtNum(results.expression)}</span>} />
+                  <Card title="Soul Urge" value={<span className={MASTER.has(results.soulUrge)?'master':''}>{fmtNum(results.soulUrge)}</span>} />
                 </div>
+
                 <div className="grid md:grid-cols-3 gap-4">
-                  <Card title="Personality" value={`${results.personality.compound} / ${results.personality.reduced}`}/>
-                  <Card title="Personal Year" value={results.py}/>
-                  <Card title="Personal Month" value={results.pm}/>
+                  <Card title="Personality" value={<span className={MASTER.has(results.personality.reduced)?'master':''}>{`${results.personality.compound} / ${fmtNum(results.personality.reduced)}`}</span>} />
+                  <Card title="Personal Year" value={<span className={MASTER.has(results.py)?'master':''}>{fmtNum(results.py)}</span>} />
+                  <Card title="Personal Month" value={<span className={MASTER.has(results.pm)?'master':''}>{fmtNum(results.pm)}</span>} />
                 </div>
+
                 <div className="grid md:grid-cols-3 gap-4">
-                  <Card title="Personal Day" value={results.pd}/>
+                  <Card title="Personal Day" value={<span className={MASTER.has(results.pd)?'master':''}>{fmtNum(results.pd)}</span>} />
                   <Card title="Today" value={results.todayStr}/>
-                  <Card title="Master Numbers" value="11 / 22 / 33"/>
+                  <Card title="Master Highlights" value={masterHighlights(results)} />
                 </div>
+
                 <div className="grid md:grid-cols-2 gap-4">
                   <Card title="Daily Forecast (Finance)" value={results.dailyForecast}/>
                   <Card title="Monthly Forecast (Finance)" value={results.monthlyForecast}/>

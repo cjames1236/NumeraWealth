@@ -3,19 +3,117 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>NumeraWealth</title>
+  <title>NumeraWealth — Trader Mode</title>
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
+
+  <!-- Subtle animated background (gradient shimmer + drifting grid + faint scanlines) -->
+  <style>
+    /* Gradient shimmer */
+    .bg-trader {
+      background: radial-gradient(1200px 800px at 10% 10%, rgba(16,185,129,0.12), transparent 60%),
+                  radial-gradient(900px 700px at 90% 20%, rgba(6,182,212,0.12), transparent 60%),
+                  linear-gradient(135deg, #0b1220, #0a0f1a, #0b1220);
+      background-size: 200% 200%;
+      animation: gradientShift 18s ease-in-out infinite;
+    }
+    @keyframes gradientShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* Drifting grid (faint) */
+    .grid-overlay::before {
+      content: "";
+      position: absolute;
+      inset: -100px;                 /* cover + bleed for drift */
+      background-image:
+        linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px);
+      background-size: 40px 40px, 40px 40px;
+      transform: translateZ(0);
+      animation: gridDrift 40s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes gridDrift {
+      0%   { transform: translate3d(0,0,0); }
+      100% { transform: translate3d(-80px,-40px,0); }
+    }
+
+    /* Very light scanlines for a trader-terminal feel */
+    .scanlines::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.02),
+        rgba(255,255,255,0.02) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+    }
+
+    /* Neon card glow on hover */
+    .glass-card {
+      background: rgba(13, 18, 30, 0.7);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(100,116,139,0.25);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.02);
+      transition: box-shadow .25s ease, border-color .25s ease, transform .2s ease;
+    }
+    .glass-card:hover {
+      border-color: rgba(16,185,129,0.45);
+      box-shadow: 0 12px 36px rgba(16,185,129,0.15), inset 0 0 0 1px rgba(16,185,129,0.15);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(90deg, #10b981, #06b6d4);
+      box-shadow: 0 8px 24px rgba(16,185,129,0.25), 0 2px 8px rgba(6,182,212,0.15);
+      transition: transform .12s ease, box-shadow .2s ease, opacity .2s ease;
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 28px rgba(16,185,129,0.3), 0 3px 10px rgba(6,182,212,0.2);
+    }
+
+    /* Input focus ring */
+    .input {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148,163,184,0.25);
+      color: #e5e7eb;
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .input::placeholder { color: rgba(148,163,184,0.6); }
+    .input:focus {
+      outline: none;
+      border-color: rgba(16,185,129,0.6);
+      box-shadow: 0 0 0 3px rgba(16,185,129,0.2);
+    }
+
+    /* Number pill styling */
+    .pill {
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(30, 41, 59, 0.6);
+    }
+  </style>
 </head>
-<body class="bg-gray-100">
-  <div id="root" class="min-h-screen flex items-center justify-center p-4"></div>
+
+<body class="min-h-screen bg-trader relative text-slate-200">
+  <div class="grid-overlay scanlines absolute inset-0"></div>
+
+  <div id="root" class="relative z-10 min-h-screen flex items-center justify-center p-4"></div>
 
   <script type="text/babel">
     const { useState } = React;
 
-    // --- Numerology constants/helpers ---
+    // ===== Numerology core =====
     const MASTER = new Set([11,22,33]);
     const LETTER_VALUES = {
       A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9,
@@ -31,7 +129,7 @@
     const reduceNumber = (n) => { n = Math.abs(Number(n)||0); while (n>9 && !MASTER.has(n)) n = sumDigits(n); return n; };
     const reduceComponents = (...nums) => reduceNumber(nums.map(reduceNumber).reduce((a,b)=>a+b,0));
 
-    // Contextual Y rules
+    // Contextual Y per word
     const isVowelY = (word, idx) => {
       const chars = [...word];
       const prev = chars[idx-1];
@@ -63,7 +161,7 @@
       return { vowelsSum, consonantsSum, allSum };
     };
 
-    // Today in America/Chicago
+    // Date helpers (America/Chicago)
     const todayChicago = () => {
       const parts = new Intl.DateTimeFormat('en-US', { timeZone:'America/Chicago', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date());
       const get = (t) => Number(parts.find(p=>p.type===t).value);
@@ -71,7 +169,6 @@
       return { m,d,y, str:`${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}` };
     };
 
-    // Parse birthdate
     const parseBirth = (s) => {
       const a = (s||'').trim().split('/');
       if (a.length!==3) return null;
@@ -82,11 +179,10 @@
       return { m:M, d:D, y:Y };
     };
 
-    // --- Name validation: require First + FULL Middle + Last (no initials) ---
+    // Validate: First + FULL Middle + Last (no initials)
     const validateFullBirthName = (name) => {
       const words = splitWords(name);
       if (words.length < 3) return { ok:false, msg:'Enter your full birth name: First Middle Last.' };
-      // all middle words (everything except first & last) must be length >= 2
       const middles = words.slice(1, -1);
       if (middles.some(w => w.length < 2)) return { ok:false, msg:'Please enter your FULL middle name (no initials).' };
       return { ok:true, msg:'' };
@@ -100,12 +196,11 @@
       const { consonantsSum } = classifyNameLetters(name);
       return { compound: consonantsSum, reduced: reduceNumber(consonantsSum) };
     };
-
     const calcPersonalYear  = (today,b) => reduceNumber(reduceNumber(b.m)+reduceNumber(b.d)+reduceNumber(today.y));
     const calcPersonalMonth = (today,b) => reduceNumber(calcPersonalYear(today,b)+today.m);
     const calcPersonalDay   = (today,b) => reduceNumber(calcPersonalMonth(today,b)+today.d);
 
-    // --- Finance-focused Forecast ---
+    // Finance-focused forecasts (Daily & Monthly) with Life Path tint
     const PD_FINANCE = {
       1: "Initiation day: open pilots, start positions, or launch a plan. Keep risk defined.",
       2: "Partnership day: collaborate, hedge, or build spreads. Patience beats forcing trades.",
@@ -120,23 +215,32 @@
       22:"Build day: automate, systematize, and place long-term bricks that compound.",
       33:"Service day: mentor, support customers, strengthen relationships that monetize later."
     };
-    const LP_TINT = {
-      1:" Favor bold but measured starts.",
-      2:" Favor cooperative deals and nuance.",
-      3:" Favor brand, comms, and creative angles.",
-      4:" Favor process, discipline, and durability.",
-      5:" Favor flexibility and adaptive edges.",
-      6:" Favor stewardship, quality, and loyalty.",
-      7:" Favor analysis, timing, and patience.",
-      8:" Favor ambition, metrics, and leverage.",
-      9:" Favor perspective, pruning, and impact.",
-      11:" Favor intuition paired with validation.",
-      22:" Favor scalable systems and foundations.",
-      33:" Favor teaching and value-through-service."
+    const PM_FINANCE = {
+      1: "Month of fresh starts: initiate projects, set targets, and define risk frameworks.",
+      2: "Month of alignment: build partnerships, negotiate terms, and refine hedges.",
+      3: "Month of visibility: ship content, pitch offers, expand top-of-funnel.",
+      4: "Month of discipline: optimize costs, strengthen processes, and document SOPs.",
+      5: "Month of agility: test new channels, iterate fast, but avoid overtrading.",
+      6: "Month of maintenance: protect cash flow, nurture clients, upgrade essentials.",
+      7: "Month of research: backtest, study markets, and prepare systems quietly.",
+      8: "Month of execution: pursue scale, performance reviews, and ROI milestones.",
+      9: "Month of pruning: exit weak lines, consolidate, and finalize outstanding tasks.",
+      11:"Month of insight: ideate, prototype selectively, validate signals.",
+      22:"Month of building: lay scalable foundations, infra, automation.",
+      33:"Month of service: deepen relationships, deliver value, build goodwill."
     };
-    const getFinanceForecast = (pd, lp) => (PD_FINANCE[pd] || "Balanced day: follow the plan and manage risk.") + (LP_TINT[lp] || "");
+    const LP_TINT = {
+      1:" Favor bold but measured starts.", 2:" Favor cooperative deals and nuance.",
+      3:" Favor brand, comms, and creative angles.", 4:" Favor process, discipline, and durability.",
+      5:" Favor flexibility and adaptive edges.", 6:" Favor stewardship, quality, and loyalty.",
+      7:" Favor analysis, timing, and patience.", 8:" Favor ambition, metrics, and leverage.",
+      9:" Favor perspective, pruning, and impact.", 11:" Favor intuition paired with validation.",
+      22:" Favor scalable systems and foundations.", 33:" Favor teaching and value-through-service."
+    };
+    const getDailyFinanceForecast = (pd, lp) => (PD_FINANCE[pd] || "Balanced day: follow the plan and manage risk.") + (LP_TINT[lp] || "");
+    const getMonthlyFinanceForecast = (pm, lp) => (PM_FINANCE[pm] || "Steady month: compound small advantages.") + (LP_TINT[lp] || "");
 
-    // --- App ---
+    // ===== App =====
     const App = () => {
       const today = todayChicago();
       const [name,setName] = useState('');
@@ -147,23 +251,23 @@
       const handleCalculate = () => {
         setError('');
         if (!birthdate || !name) { setError('Please enter both name and birthdate.'); return; }
-
         const validName = validateFullBirthName(name);
         if (!validName.ok) { setError(validName.msg); return; }
-
         const b = parseBirth(birthdate);
         if (!b) { setError('Enter a valid birthdate (MM/DD/YYYY).'); return; }
 
-        const lifePath = calcLifePath(b);
-        const expression = calcExpression(name);
-        const soulUrge  = calcSoulUrge(name);
+        const lifePath    = calcLifePath(b);
+        const expression  = calcExpression(name);
+        const soulUrge    = calcSoulUrge(name);
         const personality = calcPersonality(name);
         const py = calcPersonalYear(today,b);
         const pm = calcPersonalMonth(today,b);
         const pd = calcPersonalDay(today,b);
-        const forecast = getFinanceForecast(pd, lifePath);
 
-        setResults({ lifePath, expression, soulUrge, personality, py, pm, pd, todayStr: today.str, forecast });
+        const dailyForecast   = getDailyFinanceForecast(pd, lifePath);
+        const monthlyForecast = getMonthlyFinanceForecast(pm, lifePath);
+
+        setResults({ lifePath, expression, soulUrge, personality, py, pm, pd, todayStr: today.str, dailyForecast, monthlyForecast });
       };
 
       // Clear results when editing
@@ -171,54 +275,81 @@
       const onBirthChange = (e) => { setBirthdate(e.target.value); setResults(null); };
 
       return (
-        <div className="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-6">
-          <h1 className="text-3xl font-bold text-center mb-2">NumeraWealth</h1>
-          <p className="text-center text-gray-500 mb-4">Enter your <strong>full birth name</strong> (First <u>Middle</u> Last) and birthdate.</p>
+        <div className="w-full max-w-4xl">
+          <div className="glass-card rounded-3xl p-6 md:p-8">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg pill">
+                <!-- tiny "candlestick" icon -->
+                <svg viewBox="0 0 24 24" className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path d="M7 4v16m0-10h4m-4 0v-4m4 4v4m6-8v16m0-10h-4m4 0v-4m-4 4v4"/>
+                </svg>
+              </span>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">NumeraWealth <span className="text-emerald-400">Trader</span></h1>
+            </div>
+            <p className="text-center text-slate-400 mb-6">
+              Enter your <strong>full birth name</strong> (First <u>Middle</u> Last) and birthdate.
+            </p>
 
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium">Full Birth Name (Middle required)</label>
-              <input value={name} onChange={onNameChange} placeholder="First Middle Last"
-                     className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
-              <p className="text-xs text-gray-500 mt-1">No initials. Hyphens/apostrophes OK.</p>
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300">Full Birth Name (Middle required)</label>
+                <input
+                  value={name} onChange={onNameChange} placeholder="First Middle Last"
+                  className="input mt-1 block w-full rounded-lg p-2"
+                />
+                <p className="text-xs text-slate-500 mt-1">No initials. Hyphens/apostrophes OK.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300">Birthdate (MM/DD/YYYY)</label>
+                <input
+                  value={birthdate} onChange={onBirthChange} placeholder="MM/DD/YYYY"
+                  className="input mt-1 block w-full rounded-lg p-2"
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium">Birthdate (MM/DD/YYYY)</label>
-              <input value={birthdate} onChange={onBirthChange} placeholder="MM/DD/YYYY"
-                     className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
-            </div>
+
+            <button onClick={handleCalculate}
+              className="btn-primary w-full text-white py-2.5 rounded-lg">
+              Calculate
+            </button>
+
+            {error && <div className="mt-4 p-3 rounded-lg bg-red-900/40 text-red-200 border border-red-500/30">{error}</div>}
+
+            {results && !error && (
+              <div className="mt-6 grid gap-4">
+                <div className="grid md:grid-cols-3 gap-4">
+                  <Card title="Life Path" value={results.lifePath}/>
+                  <Card title="Expression / Destiny" value={results.expression}/>
+                  <Card title="Soul Urge" value={results.soulUrge}/>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <Card title="Personality" value={`${results.personality.compound} / ${results.personality.reduced}`}/>
+                  <Card title="Personal Year" value={results.py}/>
+                  <Card title="Personal Month" value={results.pm}/>
+                </div>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                  <Card title="Personal Day" value={results.pd}/>
+                  <Card title="Today" value={results.todayStr}/>
+                  <Card title="Master Numbers" value="11 / 22 / 33"/>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <Card title="Daily Forecast (Finance)" value={results.dailyForecast}/>
+                  <Card title="Monthly Forecast (Finance)" value={results.monthlyForecast}/>
+                </div>
+              </div>
+            )}
           </div>
-
-          <button
-            onClick={handleCalculate}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
-          >
-            Calculate
-          </button>
-
-          {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
-
-          {results && !error && (
-            <div className="mt-6 grid gap-4">
-              <Card title="Life Path" value={results.lifePath}/>
-              <Card title="Expression / Destiny" value={results.expression}/>
-              <Card title="Soul Urge" value={results.soulUrge}/>
-              <Card title="Personality" value={`${results.personality.compound} / ${results.personality.reduced}`}/>
-              <Card title="Personal Year" value={results.py}/>
-              <Card title="Personal Month" value={results.pm}/>
-              <Card title="Personal Day" value={results.pd}/>
-              <Card title="Today" value={results.todayStr}/>
-              <Card title="Daily Forecast (Finance)" value={results.forecast}/>
-            </div>
-          )}
         </div>
       );
     };
 
     const Card = ({title,value}) => (
-      <div className="p-4 border rounded shadow-sm">
-        <div className="text-sm text-gray-500">{title}</div>
-        <div className="text-lg font-semibold whitespace-pre-wrap">{value}</div>
+      <div className="rounded-2xl p-4 pill">
+        <div className="text-xs uppercase tracking-wide text-slate-400">{title}</div>
+        <div className="text-lg md:text-xl font-semibold text-slate-100 whitespace-pre-wrap leading-relaxed mt-1">{value}</div>
       </div>
     );
 

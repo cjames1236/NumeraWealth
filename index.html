@@ -45,7 +45,6 @@
     .input:focus{ outline:none; border-color:rgba(16,185,129,.6); box-shadow:0 0 0 3px rgba(16,185,129,.2) }
     .pill{ border:1px solid rgba(148,163,184,.25); background:rgba(30,41,59,.6) }
     .master { color:#34d399; font-weight:600; } /* highlight for master numbers */
-    .breakdown { font-size:.8rem; color:#94a3b8; margin-top:.25rem }
   </style>
 </head>
 
@@ -60,10 +59,8 @@
     const MASTER = new Set([11,22,33]);
     const LETTER_VALUES = {A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,I:9,J:1,K:2,L:3,M:4,N:5,O:6,P:7,Q:8,R:9,S:1,T:2,U:3,V:4,W:5,X:6,Y:7,Z:8};
     const VOWELS = new Set(['A','E','I','O','U']);
-
     const onlyLetters = (s)=> (s||'').toUpperCase().replace(/[^A-Z\s'-]/g,'');
     const splitWords = (s)=> onlyLetters(s).split(/[ \-']+/).filter(Boolean);
-
     const sumDigits = (n)=> String(Math.abs(Number(n)||0)).split('').reduce((s,d)=>s+Number(d),0);
     const reduceNumber = (n)=>{ n=Math.abs(Number(n)||0); while(n>9 && !MASTER.has(n)) n=sumDigits(n); return n; };
     const reduceComponents = (...nums)=> reduceNumber(nums.map(reduceNumber).reduce((a,b)=>a+b,0));
@@ -78,22 +75,13 @@
       if (!prevV && !nextV) return true;// lone vowel sound
       return false;
     };
-
     const classifyNameLetters = (name)=>{
       const words=splitWords(name); let vowelsSum=0, consonantsSum=0, allSum=0;
-      for (const w of words){
-        for (let i=0;i<w.length;i++){
-          const ch=w[i];
-          if (ch==='Y'){
-            if (isVowelY(w,i)) vowelsSum+=LETTER_VALUES[ch]||0; else consonantsSum+=LETTER_VALUES[ch]||0;
-          } else if (VOWELS.has(ch)) {
-            vowelsSum+=LETTER_VALUES[ch]||0;
-          } else {
-            consonantsSum+=LETTER_VALUES[ch]||0;
-          }
-          allSum+=LETTER_VALUES[ch]||0;
-        }
-      }
+      for (const w of words){ for (let i=0;i<w.length;i++){ const ch=w[i];
+        if (ch==='Y'){ if (isVowelY(w,i)) vowelsSum+=LETTER_VALUES[ch]||0; else consonantsSum+=LETTER_VALUES[ch]||0; }
+        else if (VOWELS.has(ch)) vowelsSum+=LETTER_VALUES[ch]||0; else consonantsSum+=LETTER_VALUES[ch]||0;
+        allSum+=LETTER_VALUES[ch]||0;
+      }}
       return {vowelsSum, consonantsSum, allSum};
     };
 
@@ -103,20 +91,18 @@
       const get = (t)=> Number(parts.find(p=>p.type===t).value);
       const m=get('month'), d=get('day'), y=get('year'); return {m,d,y,str:`${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}`};
     };
-
     const parseBirth = (s)=>{
       const a=(s||'').trim().split('/'); if (a.length!==3) return null;
       const [M,D,Y]=a.map(Number); if (!M||!D||!Y||M<1||M>12||Y<1800||Y>3000) return null;
       const maxD=new Date(Y,M,0).getDate(); if (D<1||D>maxD) return null; return {m:M,d:D,y:Y};
     };
-
     const validateFullBirthName = (name)=>{
       const words=splitWords(name); if (words.length<3) return {ok:false,msg:'Enter your full birth name: First Middle Last.'};
       const mids=words.slice(1,-1); if (mids.some(w=>w.length<2)) return {ok:false,msg:'Please enter your FULL middle name (no initials).'};
       return {ok:true,msg:''};
     };
 
-    // core numbers values only
+    // core numbers
     const calcLifePath = (b)=> reduceComponents(b.m,b.d,b.y);
     const calcExpression = (name)=> { const {allSum}=classifyNameLetters(name); return reduceNumber(allSum); };
     const calcSoulUrge  = (name)=> { const {vowelsSum}=classifyNameLetters(name); return reduceNumber(vowelsSum); };
@@ -165,27 +151,8 @@
     const getDailyFinanceForecast   = (pd,lp)=> (PD_FINANCE[pd]||"Balanced day: follow the plan and manage risk.") + (LP_TINT[lp]||"");
     const getMonthlyFinanceForecast = (pm,lp)=> (PM_FINANCE[pm]||"Steady month: compound small advantages.") + (LP_TINT[lp]||"");
 
-    /* ===== Breakdown helpers ===== */
-    const fmtMaster = (n)=> MASTER.has(n) ? `${n} (Master)` : String(n);
-    const partBreak = (n)=> {
-      const r = reduceNumber(n);
-      return n === r ? `${n}` : `${n}→${r}`;
-    };
-    const breakdownLifePath = (b) => {
-      const rm = reduceNumber(b.m), rd = reduceNumber(b.d), ry = reduceNumber(b.y);
-      const comp = rm + rd + ry;
-      const tag = MASTER.has(comp) ? ` ${fmtMaster(comp)}` : ` ${comp}`;
-      return `${partBreak(b.m)} + ${partBreak(b.d)} + ${partBreak(b.y)} =${tag} → ${reduceNumber(comp)}`;
-    };
-    const breakdownExpression = (compound) => {
-      const tag = MASTER.has(compound) ? ` ${fmtMaster(compound)}` : ` ${compound}`;
-      return `total =${tag} → ${reduceNumber(compound)}`;
-    };
-    const breakdownSimple = (label, compound) => {
-      const tag = MASTER.has(compound) ? ` ${fmtMaster(compound)}` : ` ${compound}`;
-      return `${label} =${tag} → ${reduceNumber(compound)}`;
-    };
-
+    // formatting helpers
+    const fmtNum = (n)=> MASTER.has(n) ? `${n} (Master)` : String(n);
     const masterHighlights = (r)=>{
       const tags = [];
       if (MASTER.has(r.lifePath)) tags.push(`Life Path ${r.lifePath}`);
@@ -213,12 +180,10 @@
         const b = parseBirth(birthdate); if (!b) { setError('Enter a valid birthdate (MM/DD/YYYY).'); return; }
 
         const lifePath    = calcLifePath(b);
-
         const { vowelsSum, consonantsSum, allSum } = classifyNameLetters(name);
         const expression  = reduceNumber(allSum);
         const soulUrge    = reduceNumber(vowelsSum);
         const personality = { compound: consonantsSum, reduced: reduceNumber(consonantsSum) };
-
         const py = calcPersonalYear(today,b);
         const pm = calcPersonalMonth(today,b);
         const pd = calcPersonalDay(today,b);
@@ -226,19 +191,7 @@
         const dailyForecast   = getDailyFinanceForecast(pd, lifePath);
         const monthlyForecast = getMonthlyFinanceForecast(pm, lifePath);
 
-        setResults({
-          lifePath, expression, soulUrge, personality, py, pm, pd,
-          todayStr: today.str, dailyForecast, monthlyForecast,
-          breakdowns: {
-            lifePath: breakdownLifePath(b),
-            expression: breakdownExpression(allSum),
-            soulUrge: breakdownSimple('vowels total', vowelsSum),
-            personality: breakdownSimple('consonants total', consonantsSum),
-            py: breakdownSimple('personal year sum', reduceNumber(b.m)+reduceNumber(b.d)+reduceNumber(today.y)),
-            pm: breakdownSimple('personal month sum', py + today.m),
-            pd: breakdownSimple('personal day sum', pm + today.d)
-          }
-        });
+        setResults({ lifePath, expression, soulUrge, personality, py, pm, pd, todayStr: today.str, dailyForecast, monthlyForecast });
       };
 
       const onNameChange  = (e)=>{ setName(e.target.value); setResults(null); };
@@ -277,47 +230,19 @@
             {results && !error && (
               <div className="mt-6 grid gap-4">
                 <div className="grid md:grid-cols-3 gap-4">
-                  <Card
-                    title="Life Path"
-                    value={<span className={MASTER.has(results.lifePath)?'master':''}>{fmtMaster(results.lifePath)}</span>}
-                    breakdown={results.breakdowns.lifePath}
-                  />
-                  <Card
-                    title="Expression / Destiny"
-                    value={<span className={MASTER.has(results.expression)?'master':''}>{fmtMaster(results.expression)}</span>}
-                    breakdown={results.breakdowns.expression}
-                  />
-                  <Card
-                    title="Soul Urge"
-                    value={<span className={MASTER.has(results.soulUrge)?'master':''}>{fmtMaster(results.soulUrge)}</span>}
-                    breakdown={results.breakdowns.soulUrge}
-                  />
+                  <Card title="Life Path" value={<span className={MASTER.has(results.lifePath)?'master':''}>{fmtNum(results.lifePath)}</span>} />
+                  <Card title="Expression / Destiny" value={<span className={MASTER.has(results.expression)?'master':''}>{fmtNum(results.expression)}</span>} />
+                  <Card title="Soul Urge" value={<span className={MASTER.has(results.soulUrge)?'master':''}>{fmtNum(results.soulUrge)}</span>} />
                 </div>
 
                 <div className="grid md:grid-cols-3 gap-4">
-                  <Card
-                    title="Personality"
-                    value={<span className={MASTER.has(results.personality.reduced)?'master':''}>{`${results.personality.compound} → ${fmtMaster(results.personality.reduced)}`}</span>}
-                    breakdown={results.breakdowns.personality}
-                  />
-                  <Card
-                    title="Personal Year"
-                    value={<span className={MASTER.has(results.py)?'master':''}>{fmtMaster(results.py)}</span>}
-                    breakdown={results.breakdowns.py}
-                  />
-                  <Card
-                    title="Personal Month"
-                    value={<span className={MASTER.has(results.pm)?'master':''}>{fmtMaster(results.pm)}</span>}
-                    breakdown={results.breakdowns.pm}
-                  />
+                  <Card title="Personality" value={<span className={MASTER.has(results.personality.reduced)?'master':''}>{`${results.personality.compound} / ${fmtNum(results.personality.reduced)}`}</span>} />
+                  <Card title="Personal Year" value={<span className={MASTER.has(results.py)?'master':''}>{fmtNum(results.py)}</span>} />
+                  <Card title="Personal Month" value={<span className={MASTER.has(results.pm)?'master':''}>{fmtNum(results.pm)}</span>} />
                 </div>
 
                 <div className="grid md:grid-cols-3 gap-4">
-                  <Card
-                    title="Personal Day"
-                    value={<span className={MASTER.has(results.pd)?'master':''}>{fmtMaster(results.pd)}</span>}
-                    breakdown={results.breakdowns.pd}
-                  />
+                  <Card title="Personal Day" value={<span className={MASTER.has(results.pd)?'master':''}>{fmtNum(results.pd)}</span>} />
                   <Card title="Today" value={results.todayStr}/>
                   <Card title="Master Highlights" value={masterHighlights(results)} />
                 </div>
@@ -333,11 +258,10 @@
       );
     };
 
-    const Card = ({title,value,breakdown}) => (
+    const Card = ({title,value}) => (
       <div className="rounded-2xl p-4 pill">
         <div className="text-xs uppercase tracking-wide text-slate-400">{title}</div>
         <div className="text-lg md:text-xl font-semibold text-slate-100 whitespace-pre-wrap leading-relaxed mt-1">{value}</div>
-        {breakdown && <div className="breakdown">{breakdown}</div>}
       </div>
     );
 

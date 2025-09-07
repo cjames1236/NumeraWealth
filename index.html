@@ -28,14 +28,10 @@
     const splitWords = (s) => onlyLetters(s).split(/[ \-']+/).filter(Boolean);
 
     const sumDigits = (n) => String(Math.abs(Number(n)||0)).split('').reduce((s,d)=>s+Number(d),0);
-    const reduceNumber = (n) => {
-      n = Math.abs(Number(n)||0);
-      while (n > 9 && !MASTER.has(n)) n = sumDigits(n);
-      return n;
-    };
+    const reduceNumber = (n) => { n = Math.abs(Number(n)||0); while (n>9 && !MASTER.has(n)) n = sumDigits(n); return n; };
     const reduceComponents = (...nums) => reduceNumber(nums.map(reduceNumber).reduce((a,b)=>a+b,0));
 
-    // Contextual Y (per word)
+    // Contextual Y rules
     const isVowelY = (word, idx) => {
       const chars = [...word];
       const prev = chars[idx-1];
@@ -43,7 +39,6 @@
       const nextIsVowel = next && VOWELS.has(next);
       const prevIsVowel = prev && VOWELS.has(prev);
       const prevIsConsonant = prev && !prevIsVowel;
-
       if (idx === 0 && nextIsVowel) return false; // Ya/Yo/Yu
       if (nextIsVowel) return false;              // followed by vowel
       if (prevIsConsonant && !nextIsVowel) return true;
@@ -53,19 +48,15 @@
 
     const classifyNameLetters = (name) => {
       const words = splitWords(name);
-      let vowelsSum = 0, consonantsSum = 0, allSum = 0;
+      let vowelsSum=0, consonantsSum=0, allSum=0;
       for (const w of words) {
         const chars = [...w];
         chars.forEach((ch,i) => {
           if (ch==='Y') {
             const yIsVowel = isVowelY(w,i);
-            if (yIsVowel) vowelsSum += LETTER_VALUES[ch]||0;
-            else consonantsSum += LETTER_VALUES[ch]||0;
-          } else if (VOWELS.has(ch)) {
-            vowelsSum += LETTER_VALUES[ch]||0;
-          } else {
-            consonantsSum += LETTER_VALUES[ch]||0;
-          }
+            if (yIsVowel) vowelsSum += LETTER_VALUES[ch]||0; else consonantsSum += LETTER_VALUES[ch]||0;
+          } else if (VOWELS.has(ch)) { vowelsSum += LETTER_VALUES[ch]||0; }
+          else { consonantsSum += LETTER_VALUES[ch]||0; }
           allSum += LETTER_VALUES[ch]||0;
         });
       }
@@ -74,12 +65,10 @@
 
     // Today in America/Chicago
     const todayChicago = () => {
-      const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Chicago', year:'numeric', month:'2-digit', day:'2-digit'
-      }).formatToParts(new Date());
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone:'America/Chicago', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date());
       const get = (t) => Number(parts.find(p=>p.type===t).value);
-      const m = get('month'), d = get('day'), y = get('year');
-      return { m, d, y, str: `${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}` };
+      const m=get('month'), d=get('day'), y=get('year');
+      return { m,d,y, str:`${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')}/${y}` };
     };
 
     // Parse birthdate
@@ -93,63 +82,59 @@
       return { m:M, d:D, y:Y };
     };
 
+    // --- Name validation: require First + FULL Middle + Last (no initials) ---
+    const validateFullBirthName = (name) => {
+      const words = splitWords(name);
+      if (words.length < 3) return { ok:false, msg:'Enter your full birth name: First Middle Last.' };
+      // all middle words (everything except first & last) must be length >= 2
+      const middles = words.slice(1, -1);
+      if (middles.some(w => w.length < 2)) return { ok:false, msg:'Please enter your FULL middle name (no initials).' };
+      return { ok:true, msg:'' };
+    };
+
     // Core numbers
     const calcLifePath = (b) => reduceComponents(b.m,b.d,b.y);
-    const calcExpression = (name) => {
-      const { allSum } = classifyNameLetters(name);
-      return reduceNumber(allSum);
-    };
-    const calcSoulUrge = (name) => {
-      const { vowelsSum } = classifyNameLetters(name);
-      return reduceNumber(vowelsSum);
-    };
+    const calcExpression = (name) => { const { allSum } = classifyNameLetters(name); return reduceNumber(allSum); };
+    const calcSoulUrge  = (name) => { const { vowelsSum } = classifyNameLetters(name); return reduceNumber(vowelsSum); };
     const calcPersonality = (name) => {
       const { consonantsSum } = classifyNameLetters(name);
       return { compound: consonantsSum, reduced: reduceNumber(consonantsSum) };
     };
 
-    const calcPersonalYear = (today,b) =>
-      reduceNumber(reduceNumber(b.m)+reduceNumber(b.d)+reduceNumber(today.y));
-    const calcPersonalMonth = (today,b) =>
-      reduceNumber(calcPersonalYear(today,b)+today.m);
-    const calcPersonalDay = (today,b) =>
-      reduceNumber(calcPersonalMonth(today,b)+today.d);
+    const calcPersonalYear  = (today,b) => reduceNumber(reduceNumber(b.m)+reduceNumber(b.d)+reduceNumber(today.y));
+    const calcPersonalMonth = (today,b) => reduceNumber(calcPersonalYear(today,b)+today.m);
+    const calcPersonalDay   = (today,b) => reduceNumber(calcPersonalMonth(today,b)+today.d);
 
-    // --- Forecast logic: short, day-focused ---
-    const PD_LINES = {
-      1: "New starts and decisive actions land well. Lead, don’t wait.",
-      2: "Cooperate, pair up, and be patient; soft power wins.",
-      3: "Speak up and create—great for pitches, content, and outreach.",
-      4: "Plan, organize, and finish; structure beats speed today.",
-      5: "Stay flexible; quick pivots open opportunities.",
-      6: "Handle responsibilities and relationships; tidy up loose ends.",
-      7: "Think, research, and trust your read; protect focus.",
-      8: "Push goals and negotiations; results favor clear metrics.",
-      9: "Wrap things, edit, release; generosity returns dividends.",
-      11:"Follow the nudge; insight + timing align.",
-      22:"Lay foundations that scale; small bricks, big blueprint.",
-      33:"Lead by helping; teach, mentor, uplift."
+    // --- Finance-focused Forecast ---
+    const PD_FINANCE = {
+      1: "Initiation day: open pilots, start positions, or launch a plan. Keep risk defined.",
+      2: "Partnership day: collaborate, hedge, or build spreads. Patience beats forcing trades.",
+      3: "Communication day: pitch ideas, journal setups, review trade plans; light sizing.",
+      4: "Structure day: tighten risk, rebalance, pay down debt, and build checklists.",
+      5: "Volatility day: trade momentum or scalp, but cap size and respect stops.",
+      6: "Income day: focus on cash flow—dividends, covered calls, budgets, repairs.",
+      7: "Research day: backtest, study tape, wait for A+ setups; fewer trades, higher quality.",
+      8: "Power day: push negotiations, scale winners, review KPIs; results-driven moves.",
+      9: "Completion day: harvest profits, cut laggards, tidy accounts, and reset.",
+      11:"Insight day: small asymmetric shots from clear signals; protect capital.",
+      22:"Build day: automate, systematize, and place long-term bricks that compound.",
+      33:"Service day: mentor, support customers, strengthen relationships that monetize later."
     };
-    const LP_FLAVOR = {
-      1:"Remember: your Life Path favors bold initiation.",
-      2:"Remember: your Life Path favors partnership and nuance.",
-      3:"Remember: your Life Path favors expression and creativity.",
-      4:"Remember: your Life Path favors discipline and process.",
-      5:"Remember: your Life Path favors adaptability and change.",
-      6:"Remember: your Life Path favors stewardship and harmony.",
-      7:"Remember: your Life Path favors analysis and timing.",
-      8:"Remember: your Life Path favors ambition and strategy.",
-      9:"Remember: your Life Path favors perspective and service.",
-      11:"Remember: your Life Path favors intuition and inspiration.",
-      22:"Remember: your Life Path builds durable systems.",
-      33:"Remember: your Life Path multiplies value through service."
+    const LP_TINT = {
+      1:" Favor bold but measured starts.",
+      2:" Favor cooperative deals and nuance.",
+      3:" Favor brand, comms, and creative angles.",
+      4:" Favor process, discipline, and durability.",
+      5:" Favor flexibility and adaptive edges.",
+      6:" Favor stewardship, quality, and loyalty.",
+      7:" Favor analysis, timing, and patience.",
+      8:" Favor ambition, metrics, and leverage.",
+      9:" Favor perspective, pruning, and impact.",
+      11:" Favor intuition paired with validation.",
+      22:" Favor scalable systems and foundations.",
+      33:" Favor teaching and value-through-service."
     };
-
-    const getDailyForecast = (pd, lp) => {
-      const core = PD_LINES[pd] || "Stay balanced and act when signals align.";
-      const flavor = LP_FLAVOR[lp] ? ` ${LP_FLAVOR[lp]}` : "";
-      return core + flavor;
-    };
+    const getFinanceForecast = (pd, lp) => (PD_FINANCE[pd] || "Balanced day: follow the plan and manage risk.") + (LP_TINT[lp] || "");
 
     // --- App ---
     const App = () => {
@@ -162,42 +147,45 @@
       const handleCalculate = () => {
         setError('');
         if (!birthdate || !name) { setError('Please enter both name and birthdate.'); return; }
+
+        const validName = validateFullBirthName(name);
+        if (!validName.ok) { setError(validName.msg); return; }
+
         const b = parseBirth(birthdate);
         if (!b) { setError('Enter a valid birthdate (MM/DD/YYYY).'); return; }
 
         const lifePath = calcLifePath(b);
         const expression = calcExpression(name);
-        const soulUrge = calcSoulUrge(name);
+        const soulUrge  = calcSoulUrge(name);
         const personality = calcPersonality(name);
         const py = calcPersonalYear(today,b);
         const pm = calcPersonalMonth(today,b);
         const pd = calcPersonalDay(today,b);
-        const forecast = getDailyForecast(pd, lifePath);
+        const forecast = getFinanceForecast(pd, lifePath);
 
-        setResults({
-          lifePath, expression, soulUrge, personality, py, pm, pd,
-          todayStr: today.str, forecast
-        });
+        setResults({ lifePath, expression, soulUrge, personality, py, pm, pd, todayStr: today.str, forecast });
       };
 
-      // Clear stale results when user edits inputs (optional UX)
-      const onNameChange = (e) => { setName(e.target.value); setResults(null); };
+      // Clear results when editing
+      const onNameChange  = (e) => { setName(e.target.value); setResults(null); };
       const onBirthChange = (e) => { setBirthdate(e.target.value); setResults(null); };
 
       return (
         <div className="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-6">
-          <h1 className="text-3xl font-bold text-center mb-4">NumeraWealth</h1>
+          <h1 className="text-3xl font-bold text-center mb-2">NumeraWealth</h1>
+          <p className="text-center text-gray-500 mb-4">Enter your <strong>full birth name</strong> (First <u>Middle</u> Last) and birthdate.</p>
 
           <div className="grid md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium">Full Name</label>
-              <input value={name} onChange={onNameChange}
-                className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
+              <label className="block text-sm font-medium">Full Birth Name (Middle required)</label>
+              <input value={name} onChange={onNameChange} placeholder="First Middle Last"
+                     className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
+              <p className="text-xs text-gray-500 mt-1">No initials. Hyphens/apostrophes OK.</p>
             </div>
             <div>
               <label className="block text-sm font-medium">Birthdate (MM/DD/YYYY)</label>
-              <input value={birthdate} onChange={onBirthChange}
-                className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
+              <input value={birthdate} onChange={onBirthChange} placeholder="MM/DD/YYYY"
+                     className="mt-1 block w-full border-gray-300 rounded-md p-2"/>
             </div>
           </div>
 
@@ -220,7 +208,7 @@
               <Card title="Personal Month" value={results.pm}/>
               <Card title="Personal Day" value={results.pd}/>
               <Card title="Today" value={results.todayStr}/>
-              <Card title="Daily Forecast" value={results.forecast}/>
+              <Card title="Daily Forecast (Finance)" value={results.forecast}/>
             </div>
           )}
         </div>

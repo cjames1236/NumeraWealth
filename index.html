@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>NumeraWealth — Trader (Cash App Access)</title>
+  <title>NumeraWealth — Trader (Free Try + Cash App)</title>
 
   <!-- React, Tailwind, Babel -->
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
@@ -73,6 +73,7 @@
     .link { color:#22d3ee; text-decoration: underline; }
     .badge { font-size:.75rem; padding:.15rem .5rem; border-radius:.5rem; border:1px solid rgba(148,163,184,.25); background:rgba(30,41,59,.6) }
     .modal-bg { background:rgba(0,0,0,.65); }
+    .note { font-size:.9rem; color:#a5b4fc }
   </style>
 </head>
 
@@ -83,12 +84,13 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    /* ===== Cash App settings ===== */
+    /* ===== Cash App + Access settings ===== */
     const CASH_TAG = "$CurtisGieseke";
     const CASH_LINK = "https://cash.app/" + CASH_TAG; // e.g., https://cash.app/$CurtisGieseke
     const PRICE_TEXT = "$0.99 for 14 days";
-    const ACCESS_KEY = "nw:access:until"; // localStorage key
+    const ACCESS_KEY = "nw:access:until";  // localStorage key for paid access
     const ACCESS_DAYS = 14;
+    const TRIAL_KEY  = "nw:trial:used";    // one free calculation per browser
 
     /* ===== Numerology core ===== */
     const MASTER = new Set([11,22,33]);
@@ -218,30 +220,27 @@
       return tags.length ? tags.join(", ") : "None";
     };
 
-    /* ===== Access Control (client-side, honor system) ===== */
+    /* ===== Access control (trial + paid) ===== */
     const now = () => Date.now();
     const daysToMs = d => d*24*60*60*1000;
 
-    function getAccessUntil(){
-      const raw = localStorage.getItem(ACCESS_KEY);
-      const t = raw ? Number(raw) : 0;
-      return Number.isFinite(t) ? t : 0;
-    }
-    function hasActiveAccess(){
-      return getAccessUntil() > now();
-    }
-    function remainingDays(){
+    // Paid access
+    const getAccessUntil = ()=> Number(localStorage.getItem(ACCESS_KEY) || 0);
+    const hasActiveAccess = ()=> getAccessUntil() > now();
+    const remainingDays = ()=> {
       const ms = getAccessUntil() - now();
       return ms > 0 ? Math.ceil(ms / (24*60*60*1000)) : 0;
-    }
-    function activateAccess(){
+    };
+    const activateAccess = ()=> {
       const until = now() + daysToMs(ACCESS_DAYS);
       localStorage.setItem(ACCESS_KEY, String(until));
       return until;
-    }
-    function clearAccess(){
-      localStorage.removeItem(ACCESS_KEY);
-    }
+    };
+    const clearAccess = ()=> localStorage.removeItem(ACCESS_KEY);
+
+    // Trial: one free calculation
+    const hasTrialUsed = ()=> localStorage.getItem(TRIAL_KEY) === '1';
+    const markTrialUsed = ()=> localStorage.setItem(TRIAL_KEY, '1');
 
     /* ===== UI Components ===== */
     const Card = ({title,value,children}) => (
@@ -260,10 +259,10 @@
       return (
         <div className="fixed inset-0 modal-bg flex items-center justify-center p-4">
           <div className="glass-card rounded-2xl max-w-lg w-full p-6">
-            <h2 className="text-2xl font-bold mb-2">Unlock Access</h2>
+            <h2 className="text-2xl font-bold mb-2">Unlock 14-Day Access</h2>
             <p className="text-slate-300 mb-4">
-              Send <span className="font-semibold">{PRICE_TEXT}</span> to <span className="font-semibold">{CASH_TAG}</span> on Cash App
-              to unlock <strong>14 days</strong> of use.
+              Send <span className="font-semibold">{PRICE_TEXT}</span> to <span className="font-semibold">{CASH_TAG}</span> on Cash App.
+              After paying, click <em>Activate 14-Day Access</em>.
             </p>
 
             <div className="grid gap-3">
@@ -274,7 +273,7 @@
                 Activate 14-Day Access
               </button>
               <p className="text-xs text-slate-400 mt-1">
-                This is a lightweight, client-side activation (honor system). For strict verification, a backend can be added later.
+                Your access is stored on this device. Clearing browser data will remove it.
               </p>
             </div>
           </div>
@@ -288,8 +287,11 @@
       const [birthdate,setBirthdate] = useState('');
       const [results,setResults] = useState(null);
       const [error,setError] = useState('');
-      const [showPay,setShowPay] = useState(!hasActiveAccess());
+
+      const [showPay,setShowPay] = useState(!hasActiveAccess() && hasTrialUsed());
       const [daysLeft,setDaysLeft] = useState(remainingDays());
+      const [trialUsed,setTrialUsed] = useState(hasTrialUsed());
+      const [trialNotice,setTrialNotice] = useState('');
 
       useEffect(()=>{
         setDaysLeft(remainingDays());
@@ -304,40 +306,62 @@
         return true;
       };
 
-      const handleCalculate = () => {
-        setError('');
-        if (!hasActiveAccess()) { setShowPay(true); return; }
-        if (!softRateLimitOk()) return setError('One moment... try again.');
-        if (!birthdate || !name) { setError('Please enter both name and birthdate.'); return; }
-        const valid = validateFullBirthName(name); if (!valid.ok) { setError(valid.msg); return; }
-        const b = parseBirth(birthdate); if (!b) { setError('Enter a valid birthdate (MM/DD/YYYY).'); return; }
-
+      const runCalculations = (b,nameStr) => {
         const lifePath    = calcLifePath(b);
-        const expression  = calcExpression(name);
-        const soulUrge    = calcSoulUrge(name);
-        const personality = calcPersonality(name);
+        const expression  = calcExpression(nameStr);
+        const soulUrge    = calcSoulUrge(nameStr);
+        const personality = calcPersonality(nameStr);
         const py = calcPersonalYear(today,b);
         const pm = calcPersonalMonth(today,b);
         const pd = calcPersonalDay(today,b);
         const dailyForecast   = getDailyFinanceForecast(pd, lifePath);
         const monthlyForecast = getMonthlyFinanceForecast(pm, lifePath);
-
         setResults({ lifePath, expression, soulUrge, personality, py, pm, pd, todayStr: today.str, dailyForecast, monthlyForecast });
       };
 
-      const onNameChange  = (e)=>{ setName(e.target.value); setResults(null); };
-      const onBirthChange = (e)=>{ setBirthdate(e.target.value); setResults(null); };
+      const handleCalculate = () => {
+        setError('');
+        setTrialNotice('');
+        if (!softRateLimitOk()) return setError('One moment... try again.');
+        if (!birthdate || !name) { setError('Please enter both name and birthdate.'); return; }
+        const valid = validateFullBirthName(name); if (!valid.ok) { setError(valid.msg); return; }
+        const b = parseBirth(birthdate); if (!b) { setError('Enter a valid birthdate (MM/DD/YYYY).'); return; }
+
+        // Access logic: 1) Allow if paid; 2) If not paid and trial unused, allow once; 3) else show paywall
+        if (hasActiveAccess()) {
+          runCalculations(b, name);
+          return;
+        }
+        if (!trialUsed) {
+          runCalculations(b, name);
+          markTrialUsed();
+          setTrialUsed(true);
+          setTrialNotice('That was your free try. Unlock 14-day access to continue using the app.');
+          return;
+        }
+        // Trial used & no access -> show paywall
+        setShowPay(true);
+      };
+
+      const onNameChange  = (e)=>{ setName(e.target.value); setResults(null); setTrialNotice(''); };
+      const onBirthChange = (e)=>{ setBirthdate(e.target.value); setResults(null); setTrialNotice(''); };
 
       const handleActivated = ()=>{
         setShowPay(false);
         setDaysLeft(remainingDays());
+        setTrialNotice('');
       };
 
       const clearPass = ()=>{
         clearAccess();
         setDaysLeft(0);
+        // remain with trialUsed=true; user would need to pay to keep using
         setShowPay(true);
       };
+
+      const accessBadge = hasActiveAccess()
+        ? `Access: ${daysLeft} day${daysLeft===1?'':'s'} left`
+        : (trialUsed ? 'Trial used — unlock access' : 'Free trial: 1 calculation');
 
       return (
         <div className="w-full max-w-4xl">
@@ -353,10 +377,7 @@
                 <h1 className="text-2xl md:text-3xl font-bold tracking-tight">NumeraWealth <span className="text-emerald-400">Trader</span></h1>
               </div>
               <div className="flex items-center gap-2">
-                {hasActiveAccess()
-                  ? <span className="badge">Access: {daysLeft} day{daysLeft===1?'':'s'} left</span>
-                  : <span className="badge">Locked • {PRICE_TEXT}</span>
-                }
+                <span className="badge">{accessBadge}</span>
                 {hasActiveAccess() && (
                   <button onClick={clearPass} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">Reset</button>
                 )}
@@ -397,15 +418,19 @@
 
             <button onClick={handleCalculate} className="btn-primary w-full text-white py-2.5 rounded-lg">Calculate</button>
 
-            {!hasActiveAccess() && (
+            {trialNotice && !hasActiveAccess() && (
+              <div className="mt-3 text-center note">{trialNotice}</div>
+            )}
+
+            {!hasActiveAccess() && trialUsed && (
               <div className="mt-3 text-center text-slate-400 text-sm">
-                Access required to calculate. Pay with Cash App, then click “Activate / Manage Access”.
+                Pay with Cash App, then click “Activate / Manage Access”.
               </div>
             )}
 
             {error && <div className="mt-4 p-3 rounded-lg bg-red-900/40 text-red-200 border border-red-500/30">{error}</div>}
 
-            {results && hasActiveAccess() && !error && (
+            {results && !error && (
               <div className="mt-6 grid gap-4">
                 <div className="grid md:grid-cols-3 gap-4">
                   <Card title="Life Path" value={<span className={MASTER.has(results.lifePath)?'master':''}>{fmtNum(results.lifePath)}</span>} />

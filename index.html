@@ -74,16 +74,39 @@
 
     /* === Price & Square Payment Link === */
     const PRICE_TEXT = '$1.99 for 30 days';
-    // ⬇️ PASTE your Square Payment Link URL below (Square Dashboard → Payment links → Copy link)
-    const PAYMENT_LINK_URL = 'PASTE_YOUR_SQUARE_PAYMENT_LINK_URL';
+    const PAYMENT_LINK_URL = 'https://square.link/u/5MsHfCo9'; // Your Square Payment Link
 
-    /* === Access + Trial (client side + optional server verify) === */
-    const ACCESS_TOKEN_KEY = 'nw:access:token';
+    /* === Access + Trial ===
+       We support two modes:
+       1) Server-verified JWT (if you later add /api/access/status + /api/verify-session)
+       2) Client fallback (no server): we store a local expiry when the user returns with ?paid=1
+    */
+    const ACCESS_TOKEN_KEY = 'nw:access:token';   // server JWT (optional)
+    const ACCESS_LOCAL_KEY = 'nw:access:local';   // local expiry timestamp (ms)
     const TRIAL_KEY = 'nw:trial:used';
 
     const getToken = () => localStorage.getItem(ACCESS_TOKEN_KEY) || '';
     const setToken = (t) => localStorage.setItem(ACCESS_TOKEN_KEY, t || '');
     const clearToken = () => localStorage.removeItem(ACCESS_TOKEN_KEY);
+
+    const getLocalAccess = () => {
+      const exp = Number(localStorage.getItem(ACCESS_LOCAL_KEY) || 0);
+      if (!exp) return { active:false, daysLeft:0 };
+      const now = Date.now();
+      if (exp <= now) {
+        localStorage.removeItem(ACCESS_LOCAL_KEY);
+        return { active:false, daysLeft:0 };
+      }
+      const daysLeft = Math.max(1, Math.ceil((exp - now)/86400000));
+      return { active:true, daysLeft };
+    };
+    const grantLocalAccess = (days=30) => {
+      const exp = Date.now() + days*86400000;
+      localStorage.setItem(ACCESS_LOCAL_KEY, String(exp));
+      return getLocalAccess();
+    };
+    const clearLocalAccess = () => localStorage.removeItem(ACCESS_LOCAL_KEY);
+
     const hasTrialUsed = ()=> localStorage.getItem(TRIAL_KEY) === '1';
     const markTrialUsed = ()=> localStorage.setItem(TRIAL_KEY, '1');
 
@@ -98,53 +121,70 @@
       return data;
     }
 
+    // 1) Try server status if token present
+    // 2) Else use client local access fallback
     async function checkAccess() {
       const token = getToken();
-      if (!token) return { active:false, daysLeft:0 };
-      try {
-        const data = await fetchJSON('/api/access/status', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        return data;
-      } catch {
-        return { active:false, daysLeft:0 };
+      if (token) {
+        try {
+          const data = await fetchJSON('/api/access/status', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          // Server can be authoritative. If active, ignore local.
+          if (data?.active) return data;
+        } catch {}
       }
+      // Fallback to local access
+      return getLocalAccess();
     }
 
-    // Square flow: redirect to PAYMENT_LINK_URL; Square redirects back to your site.
-    // If Square appends identifiers, this tries to verify via your server (optional).
+    // After Square redirect:
+    // - If you later add /api/verify-session and Square appends txn/orderId, verify and set JWT.
+    // - Otherwise, if we see ?paid=1 we grant a local 30-day pass immediately.
     async function completeCheckoutFromURL(onUnlocked, setUiError) {
       const params = new URLSearchParams(window.location.search);
-      const paid = params.get('paid'); // set in your Square link's redirect URL (e.g., https://site/?paid=1)
+      const paid = params.get('paid'); // set this in your Square Payment Link "redirect after checkout".
       const txn = params.get('transactionId') || params.get('paymentId') || params.get('payment_id') || '';
       const orderId = params.get('orderId') || params.get('order_id') || '';
-      if (!paid && !txn && !orderId) return;
 
-      if (txn || orderId) {
-        try {
-          const qs = new URLSearchParams({ txn, orderId });
-          const data = await fetchJSON(`/api/verify-session?${qs.toString()}`);
-          if (data?.token) {
-            setToken(data.token);
-            ['paid','transactionId','paymentId','payment_id','orderId','order_id'].forEach(k=>params.delete(k));
-            const clean = `${window.location.origin}${window.location.pathname}${params.toString() ? '?'+params.toString() : ''}`;
-            window.history.replaceState({}, '', clean);
-            onUnlocked?.();
-            return;
+      try {
+        // Prefer server verify if you later add it:
+        if (txn || orderId) {
+          try {
+            const qs = new URLSearchParams({ txn, orderId });
+            const data = await fetchJSON(`/api/verify-session?${qs.toString()}`);
+            if (data?.token) {
+              clearLocalAccess();     // prefer server token if both exist
+              setToken(data.token);
+              ['paid','transactionId','paymentId','payment_id','orderId','order_id'].forEach(k=>params.delete(k));
+              const clean = `${window.location.origin}${window.location.pathname}${params.toString() ? '?'+params.toString() : ''}`;
+              window.history.replaceState({}, '', clean);
+              onUnlocked?.();
+              return;
+            }
+          } catch (e) {
+            // fall through to client unlock if paid=1 present
+            setUiError?.(`Verification error: ${e.message}`);
           }
-        } catch (e) {
-          setUiError?.(`Verification error: ${e.message}`);
         }
+
+        // Client fallback: unlock on ?paid=1 (no server needed)
+        if (paid === '1') {
+          grantLocalAccess(30);
+          ['paid','transactionId','paymentId','payment_id','orderId','order_id'].forEach(k=>params.delete(k));
+          const clean = `${window.location.origin}${window.location.pathname}${params.toString() ? '?'+params.toString() : ''}`;
+          window.history.replaceState({}, '', clean);
+          onUnlocked?.();
+        }
+      } catch (e) {
+        setUiError?.(`Checkout return error: ${e.message}`);
       }
-      setUiError?.('Payment completed. If access is not unlocked yet, please wait a moment and press Calculate again.');
     }
 
     async function startCheckout(setUiError) {
       try {
         setUiError('');
-        if (!PAYMENT_LINK_URL || PAYMENT_LINK_URL.startsWith('PASTE_')) {
-          throw new Error('Missing PAYMENT_LINK_URL. Paste your Square Payment Link URL into the script.');
-        }
+        if (!PAYMENT_LINK_URL) throw new Error('Missing PAYMENT_LINK_URL.');
         window.location.href = PAYMENT_LINK_URL;
       } catch (e) {
         setUiError(`Checkout error: ${e.message}`);
@@ -281,7 +321,7 @@
           <div className="glass-card rounded-2xl max-w-lg w-full p-6">
             <h2 className="text-2xl font-bold mb-2">Unlock 30-Day Access</h2>
             <p className="text-slate-300 mb-4">
-              Pay <span className="font-semibold">{PRICE_TEXT}</span> securely via Square.
+              Pay <span className="font-semibold">$1.99</span> securely via Square.
               (Cash App Pay supported when enabled in your Square link.)
             </p>
             <button disabled={busy} onClick={()=>{ setBusy(true); onCheckout().finally(()=>setBusy(false)); }} className="btn-primary w-full text-white py-2 rounded-lg">
@@ -289,7 +329,7 @@
             </button>
             {uiError && <div className="mt-3 p-2 rounded-lg bg-red-900/40 text-red-200 border border-red-500/30 text-sm">{uiError}</div>}
             <p className="text-xs text-slate-400 mt-3">
-              After payment you’ll return here automatically. If your server verifies payments, access unlocks for 30 days.
+              After payment you’ll return here automatically. Access unlocks for 30 days.
             </p>
           </div>
         </div>
@@ -356,8 +396,14 @@
           const valid = validateFullBirthName(name); if (!valid.ok) return setError(valid.msg);
           const b = parseBirth(birthdate); if (!b) return setError('Enter a valid birthdate (MM/DD/YYYY).');
 
-          if (access.active) return runCalculations(b, name);
+          // If access (server or local) is active, run.
+          const status = await checkAccess();
+          if (status.active) {
+            setAccess(status);
+            return runCalculations(b, name);
+          }
 
+          // Free single try if not used
           if (!trialUsed) {
             runCalculations(b, name);
             markTrialUsed();
@@ -372,12 +418,17 @@
       };
 
       const unlock = async () => {
-        try { await startCheckout(setUiError); } catch (e) { __fatal('Checkout start failed', e); }
+        try {
+          setUiError('');
+          if (!PAYMENT_LINK_URL) throw new Error('Missing PAYMENT_LINK_URL.');
+          window.location.href = PAYMENT_LINK_URL;
+        } catch (e) { __fatal('Checkout start failed', e); }
       };
 
       const resetAccess = ()=>{
         try {
           clearToken();
+          clearLocalAccess();
           setAccess({ active:false, daysLeft:0 });
           setShowPay(false);
         } catch (e) { __fatal('Reset failed', e); }
@@ -401,7 +452,7 @@
               </div>
               <div className="flex items-center gap-2">
                 <span className="badge">{accessBadge}</span>
-                {access.active && (
+                {(access.active || getLocalAccess().active) && (
                   <button onClick={resetAccess} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">Sign out</button>
                 )}
               </div>
@@ -430,7 +481,7 @@
               </button>
             </div>
 
-            {trialNotice && !access.active && (
+            {trialNotice && !getLocalAccess().active && !access.active && (
               <div className="mt-3 text-center note">{trialNotice}</div>
             )}
 

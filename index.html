@@ -74,12 +74,12 @@
 
     /* === Price & Square Payment Link === */
     const PRICE_TEXT = '$1.99 for 30 days';
-    const PAYMENT_LINK_URL = 'https://square.link/u/5MsHfCo9'; // Your Square Payment Link
+    const PAYMENT_LINK_URL = 'https://checkout.square.site/merchant/MLG7B86HXYKJF/checkout/RHXCDXBPJWRRSHP4EZOMN2I5';
 
     /* === Access + Trial ===
-       We support two modes:
-       1) Server-verified JWT (if you later add /api/access/status + /api/verify-session)
-       2) Client fallback (no server): we store a local expiry when the user returns with ?paid=1
+       Modes:
+       1) Server-verified JWT (if you add /api/access/status + /api/verify-session)
+       2) Client fallback: grant 30-day local access when returning with ?paid=1
     */
     const ACCESS_TOKEN_KEY = 'nw:access:token';   // server JWT (optional)
     const ACCESS_LOCAL_KEY = 'nw:access:local';   // local expiry timestamp (ms)
@@ -121,8 +121,6 @@
       return data;
     }
 
-    // 1) Try server status if token present
-    // 2) Else use client local access fallback
     async function checkAccess() {
       const token = getToken();
       if (token) {
@@ -130,31 +128,28 @@
           const data = await fetchJSON('/api/access/status', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
-          // Server can be authoritative. If active, ignore local.
-          if (data?.active) return data;
+          if (data?.active) return data; // server wins
         } catch {}
       }
-      // Fallback to local access
-      return getLocalAccess();
+      return getLocalAccess(); // fallback
     }
 
-    // After Square redirect:
-    // - If you later add /api/verify-session and Square appends txn/orderId, verify and set JWT.
-    // - Otherwise, if we see ?paid=1 we grant a local 30-day pass immediately.
+    // Complete Square redirect:
+    // - If txn/orderId present and you add a server later, try verify → set JWT
+    // - Else if ?paid=1 present, grant local 30-day access immediately
     async function completeCheckoutFromURL(onUnlocked, setUiError) {
       const params = new URLSearchParams(window.location.search);
-      const paid = params.get('paid'); // set this in your Square Payment Link "redirect after checkout".
+      const paid = params.get('paid');
       const txn = params.get('transactionId') || params.get('paymentId') || params.get('payment_id') || '';
       const orderId = params.get('orderId') || params.get('order_id') || '';
 
       try {
-        // Prefer server verify if you later add it:
         if (txn || orderId) {
           try {
             const qs = new URLSearchParams({ txn, orderId });
             const data = await fetchJSON(`/api/verify-session?${qs.toString()}`);
             if (data?.token) {
-              clearLocalAccess();     // prefer server token if both exist
+              clearLocalAccess();
               setToken(data.token);
               ['paid','transactionId','paymentId','payment_id','orderId','order_id'].forEach(k=>params.delete(k));
               const clean = `${window.location.origin}${window.location.pathname}${params.toString() ? '?'+params.toString() : ''}`;
@@ -163,12 +158,10 @@
               return;
             }
           } catch (e) {
-            // fall through to client unlock if paid=1 present
             setUiError?.(`Verification error: ${e.message}`);
           }
         }
 
-        // Client fallback: unlock on ?paid=1 (no server needed)
         if (paid === '1') {
           grantLocalAccess(30);
           ['paid','transactionId','paymentId','payment_id','orderId','order_id'].forEach(k=>params.delete(k));
@@ -314,6 +307,84 @@
       </div>
     );
 
+    /* ===== Share Bar ===== */
+    const ShareBar = ({ priceText }) => {
+      const [copied, setCopied] = useState(false);
+
+      const makeShareURL = () => {
+        const url = new URL(window.location.href);
+        url.search = '';  // drop existing params
+        url.hash = '';
+        url.searchParams.set('utm_source','share');
+        url.searchParams.set('utm_medium','app');
+        url.searchParams.set('utm_campaign','nw_trader');
+        return url.toString();
+      };
+
+      const shareText = `Numerology for traders: name + birthdate → today’s finance play. ${priceText}`;
+
+      const onCopy = async () => {
+        const link = makeShareURL();
+        try {
+          await navigator.clipboard.writeText(link);
+          setCopied(true);
+          setTimeout(()=>setCopied(false), 1500);
+        } catch {
+          // Fallback
+          const ta = document.createElement('textarea');
+          ta.value = link; document.body.appendChild(ta);
+          ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+          setCopied(true);
+          setTimeout(()=>setCopied(false), 1500);
+        }
+      };
+
+      const onX = () => {
+        const link = makeShareURL();
+        const u = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(link)}`;
+        window.open(u, '_blank', 'noopener,noreferrer');
+      };
+
+      const onReddit = () => {
+        const link = makeShareURL();
+        const u = `https://www.reddit.com/submit?url=${encodeURIComponent(link)}&title=${encodeURIComponent(shareText)}`;
+        window.open(u, '_blank', 'noopener,noreferrer');
+      };
+
+      const onNativeShare = async () => {
+        const link = makeShareURL();
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: 'NumeraWealth — Trader', text: shareText, url: link });
+          } catch {}
+        } else {
+          onCopy();
+        }
+      };
+
+      return (
+        <div className="mt-6 rounded-2xl p-4 pill">
+          <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Share</div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={onX} className="btn-ghost px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M18.2 2h3.3l-7.2 8.2 8.5 11.8h-6.7l-5.2-6.9-6 6.9H1.1l7.7-8.8L.7 2h6.9l4.7 6.2L18.2 2Zm-1.2 19.3h1.8L7.1 4.5H5.2l11.8 16.8Z"/></svg>
+              Post to X
+            </button>
+            <button onClick={onReddit} className="btn-ghost px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M12 2c5.5 0 10 3.6 10 8.1 0 2.6-1.7 4.9-4.2 6.3.1.3.2.7.2 1.1 0 2.4-2.9 4.3-6.5 4.3S5.2 20 5.2 17.6c0-.4.1-.7.2-1.1C3 15 2 12.9 2 10.1 2 5.6 6.5 2 12 2Zm5.1 12.4c-.6.4-1.3.7-2 .9-.1.1-.1.2-.1.3 0 1.2-1.4 2.1-3 2.1s-3-.9-3-2.1c0-.1 0-.2-.1-.3-.7-.2-1.4-.5-2-.9-.4.4-1 .6-1.6.6-.9 0-1.7-.5-1.7-1.4s.8-1.4 1.7-1.4c.5 0 1 .2 1.3.5.9-.6 2.1-1 3.4-1.2l.8-3.7 2.3.5c.2-.4.7-.7 1.3-.7.8 0 1.4.5 1.4 1.2s-.6 1.2-1.4 1.2c-.6 0-1-.3-1.2-.7l-1.4-.3-.6 2.7c1.3.2 2.5.6 3.4 1.2.3-.3.8-.5 1.3-.5.9 0 1.7.5 1.7 1.4s-.8 1.4-1.7 1.4c-.7 0-1.2-.2-1.6-.6Z"/></svg>
+              Share on Reddit
+            </button>
+            <button onClick={onCopy} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">
+              {copied ? 'Copied!' : 'Copy link'}
+            </button>
+            <button onClick={onNativeShare} className="btn-primary px-3 py-1.5 rounded-lg text-sm">
+              Share…
+            </button>
+          </div>
+        </div>
+      );
+    };
+
     const Paywall = ({onCheckout, uiError})=>{
       const [busy,setBusy] = useState(false);
       return (
@@ -349,7 +420,6 @@
       const [trialNotice,setTrialNotice] = useState('');
       const [uiError,setUiError] = useState('');
 
-      // Finish Square redirect if present, then check access
       useEffect(()=>{
         (async ()=>{
           try {
@@ -396,14 +466,12 @@
           const valid = validateFullBirthName(name); if (!valid.ok) return setError(valid.msg);
           const b = parseBirth(birthdate); if (!b) return setError('Enter a valid birthdate (MM/DD/YYYY).');
 
-          // If access (server or local) is active, run.
           const status = await checkAccess();
           if (status.active) {
             setAccess(status);
             return runCalculations(b, name);
           }
 
-          // Free single try if not used
           if (!trialUsed) {
             runCalculations(b, name);
             markTrialUsed();
@@ -508,6 +576,9 @@
                   <Card title="Daily Forecast (Finance)" value={results.dailyForecast}/>
                   <Card title="Monthly Forecast (Finance)" value={results.monthlyForecast}/>
                 </div>
+
+                {/* Share Bar */}
+                <ShareBar priceText={PRICE_TEXT} />
               </div>
             )}
           </div>

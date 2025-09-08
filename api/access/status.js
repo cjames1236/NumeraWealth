@@ -1,21 +1,23 @@
-import jwt from 'jsonwebtoken';
+// Validates the JWT and returns remaining days
+// Env: JWT_SECRET
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+const jwt = require('jsonwebtoken');
 
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return res.status(401).json({ active: false });
-
+module.exports = async (req, res) => {
   try {
-    const payload = jwt.verify(token, process.env.ACCESS_JWT_SECRET, { algorithms: ['HS256'] });
-    const nowMs = Date.now();
-    const expMs = (payload.exp || 0) * 1000;
-    const msLeft = expMs - nowMs;
-    const daysLeft = msLeft > 0 ? Math.ceil(msLeft / (24 * 60 * 60 * 1000)) : 0;
+    const hdr = req.headers['authorization'] || '';
+    const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : '';
+    if (!token) return res.status(401).json({ active:false, daysLeft:0 });
 
-    return res.status(200).json({ active: msLeft > 0, daysLeft, email: payload.sub });
+    const secret = process.env.JWT_SECRET;
+    if (!secret) return res.status(500).json({ error: 'Server not configured' });
+
+    const payload = jwt.verify(token, secret);
+    const now = Math.floor(Date.now()/1000);
+    const secsLeft = Math.max(0, (payload.exp || 0) - now);
+    const daysLeft = Math.max(1, Math.ceil(secsLeft / 86400));
+    return res.status(200).json({ active:true, daysLeft });
   } catch {
-    return res.status(401).json({ active: false });
+    return res.status(401).json({ active:false, daysLeft:0 });
   }
-}
+};

@@ -11,8 +11,16 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
 
+  <!-- Plausible Analytics (simple, privacy-friendly) -->
+  <script defer data-domain="numera-wealth.vercel.app" src="https://plausible.io/js/script.js"></script>
+
+  <meta name="description" content="Numerology for traders: name + birthdate → today’s finance play. One free try, then $1.99 for 30 days."/>
+  <meta property="og:title" content="NumeraWealth — Trader"/>
+  <meta property="og:description" content="Numerology for traders: name + birthdate → today’s finance play."/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://numera-wealth.vercel.app/"/>
+
   <style>
-    /* Trader theme & subtle animations */
     .bg-trader {
       background:
         radial-gradient(1200px 800px at 10% 10%, rgba(16,185,129,0.12), transparent 60%),
@@ -41,7 +49,6 @@
     .badge { font-size:.75rem; padding:.15rem .5rem; border-radius:.5rem; border:1px solid rgba(148,163,184,.25); background:rgba(30,41,59,.6) }
     .modal-bg { background:rgba(0,0,0,.65); }
     .note { font-size:.9rem; color:#a5b4fc }
-    /* in-page error panel */
     #fatal { position:fixed; left:12px; right:12px; bottom:12px; background:#111827; color:#fecaca; border:1px solid #ef4444; padding:12px; border-radius:12px; z-index:99999; max-height:45vh; overflow:auto; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; display:none; }
     #fatal strong { color:#fca5a5 }
   </style>
@@ -52,7 +59,6 @@
   <div id="root" class="relative z-10 min-h-screen flex items-center justify-center p-4">Loading…</div>
   <pre id="fatal"></pre>
 
-  <!-- global error catcher so a bug never shows a blank page -->
   <script>
     (function(){
       function showFatal(title, err){
@@ -65,7 +71,6 @@
       window.__fatal = showFatal;
       window.addEventListener('error', e => showFatal(e.message, e.error));
       window.addEventListener('unhandledrejection', e => showFatal('Unhandled promise rejection', e.reason));
-      console.log('[NumeraWealth] booting…');
     })();
   </script>
 
@@ -76,12 +81,13 @@
     const PRICE_TEXT = '$1.99 for 30 days';
     const PAYMENT_LINK_URL = 'https://checkout.square.site/merchant/MLG7B86HXYKJF/checkout/RHXCDXBPJWRRSHP4EZOMN2I5';
 
-    /* === Access + Trial ===
-       Modes:
-       1) Server-verified JWT (if you add /api/access/status + /api/verify-session)
-       2) Client fallback: grant 30-day local access when returning with ?paid=1
-    */
-    const ACCESS_TOKEN_KEY = 'nw:access:token';   // server JWT (optional)
+    /* === Analytics helper === */
+    const track = (name, props={}) => {
+      try { if (window.plausible) window.plausible(name, { props }); } catch {}
+    };
+
+    /* === Access + Trial (server-verified JWT + local fallback) === */
+    const ACCESS_TOKEN_KEY = 'nw:access:token';   // server JWT
     const ACCESS_LOCAL_KEY = 'nw:access:local';   // local expiry timestamp (ms)
     const TRIAL_KEY = 'nw:trial:used';
 
@@ -134,9 +140,9 @@
       return getLocalAccess(); // fallback
     }
 
-    // Complete Square redirect:
-    // - If txn/orderId present and you add a server later, try verify → set JWT
-    // - Else if ?paid=1 present, grant local 30-day access immediately
+    // Finish Square redirect:
+    // 1) Try server verify if paymentId/orderId present → JWT + unlock (preferred)
+    // 2) Else if ?paid=1 → local 30-day unlock (fallback)
     async function completeCheckoutFromURL(onUnlocked, setUiError) {
       const params = new URLSearchParams(window.location.search);
       const paid = params.get('paid');
@@ -154,6 +160,7 @@
               ['paid','transactionId','paymentId','payment_id','orderId','order_id'].forEach(k=>params.delete(k));
               const clean = `${window.location.origin}${window.location.pathname}${params.toString() ? '?'+params.toString() : ''}`;
               window.history.replaceState({}, '', clean);
+              track('unlock_verified', { mode:'server' });
               onUnlocked?.();
               return;
             }
@@ -167,6 +174,7 @@
           ['paid','transactionId','paymentId','payment_id','orderId','order_id'].forEach(k=>params.delete(k));
           const clean = `${window.location.origin}${window.location.pathname}${params.toString() ? '?'+params.toString() : ''}`;
           window.history.replaceState({}, '', clean);
+          track('unlock_success', { mode:'client' });
           onUnlocked?.();
         }
       } catch (e) {
@@ -178,6 +186,7 @@
       try {
         setUiError('');
         if (!PAYMENT_LINK_URL) throw new Error('Missing PAYMENT_LINK_URL.');
+        track('checkout_click', { price: 1.99 });
         window.location.href = PAYMENT_LINK_URL;
       } catch (e) {
         setUiError(`Checkout error: ${e.message}`);
@@ -310,83 +319,75 @@
     /* ===== Share Bar ===== */
     const ShareBar = ({ priceText }) => {
       const [copied, setCopied] = useState(false);
-
       const makeShareURL = () => {
         const url = new URL(window.location.href);
-        url.search = '';  // drop existing params
-        url.hash = '';
+        url.search = ''; url.hash = '';
         url.searchParams.set('utm_source','share');
         url.searchParams.set('utm_medium','app');
         url.searchParams.set('utm_campaign','nw_trader');
         return url.toString();
       };
-
       const shareText = `Numerology for traders: name + birthdate → today’s finance play. ${priceText}`;
-
       const onCopy = async () => {
         const link = makeShareURL();
-        try {
-          await navigator.clipboard.writeText(link);
-          setCopied(true);
-          setTimeout(()=>setCopied(false), 1500);
-        } catch {
-          // Fallback
-          const ta = document.createElement('textarea');
-          ta.value = link; document.body.appendChild(ta);
+        try { await navigator.clipboard.writeText(link); } catch {
+          const ta = document.createElement('textarea'); ta.value = link; document.body.appendChild(ta);
           ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-          setCopied(true);
-          setTimeout(()=>setCopied(false), 1500);
         }
+        setCopied(true); setTimeout(()=>setCopied(false), 1500);
+        track('share_copy');
       };
-
       const onX = () => {
         const link = makeShareURL();
         const u = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(link)}`;
-        window.open(u, '_blank', 'noopener,noreferrer');
+        window.open(u, '_blank', 'noopener,noreferrer'); track('share_x');
       };
-
       const onReddit = () => {
         const link = makeShareURL();
         const u = `https://www.reddit.com/submit?url=${encodeURIComponent(link)}&title=${encodeURIComponent(shareText)}`;
-        window.open(u, '_blank', 'noopener,noreferrer');
+        window.open(u, '_blank', 'noopener,noreferrer'); track('share_reddit');
       };
-
       const onNativeShare = async () => {
         const link = makeShareURL();
         if (navigator.share) {
-          try {
-            await navigator.share({ title: 'NumeraWealth — Trader', text: shareText, url: link });
-          } catch {}
-        } else {
-          onCopy();
-        }
+          try { await navigator.share({ title: 'NumeraWealth — Trader', text: shareText, url: link }); track('share_native'); } catch {}
+        } else { onCopy(); }
       };
-
       return (
         <div className="mt-6 rounded-2xl p-4 pill">
           <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Share</div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={onX} className="btn-ghost px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M18.2 2h3.3l-7.2 8.2 8.5 11.8h-6.7l-5.2-6.9-6 6.9H1.1l7.7-8.8L.7 2h6.9l4.7 6.2L18.2 2Zm-1.2 19.3h1.8L7.1 4.5H5.2l11.8 16.8Z"/></svg>
-              Post to X
-            </button>
-            <button onClick={onReddit} className="btn-ghost px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor"><path d="M12 2c5.5 0 10 3.6 10 8.1 0 2.6-1.7 4.9-4.2 6.3.1.3.2.7.2 1.1 0 2.4-2.9 4.3-6.5 4.3S5.2 20 5.2 17.6c0-.4.1-.7.2-1.1C3 15 2 12.9 2 10.1 2 5.6 6.5 2 12 2Zm5.1 12.4c-.6.4-1.3.7-2 .9-.1.1-.1.2-.1.3 0 1.2-1.4 2.1-3 2.1s-3-.9-3-2.1c0-.1 0-.2-.1-.3-.7-.2-1.4-.5-2-.9-.4.4-1 .6-1.6.6-.9 0-1.7-.5-1.7-1.4s.8-1.4 1.7-1.4c.5 0 1 .2 1.3.5.9-.6 2.1-1 3.4-1.2l.8-3.7 2.3.5c.2-.4.7-.7 1.3-.7.8 0 1.4.5 1.4 1.2s-.6 1.2-1.4 1.2c-.6 0-1-.3-1.2-.7l-1.4-.3-.6 2.7c1.3.2 2.5.6 3.4 1.2.3-.3.8-.5 1.3-.5.9 0 1.7.5 1.7 1.4s-.8 1.4-1.7 1.4c-.7 0-1.2-.2-1.6-.6Z"/></svg>
-              Share on Reddit
-            </button>
-            <button onClick={onCopy} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">
-              {copied ? 'Copied!' : 'Copy link'}
-            </button>
-            <button onClick={onNativeShare} className="btn-primary px-3 py-1.5 rounded-lg text-sm">
-              Share…
-            </button>
+            <button onClick={onX} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">Post to X</button>
+            <button onClick={onReddit} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">Share on Reddit</button>
+            <button onClick={onCopy} className="btn-ghost px-3 py-1.5 rounded-lg text-sm">{copied ? 'Copied!' : 'Copy link'}</button>
+            <button onClick={onNativeShare} className="btn-primary px-3 py-1.5 rounded-lg text-sm">Share…</button>
           </div>
         </div>
       );
     };
 
+    /* ===== Landing mode (for ads) ===== */
+    const Landing = ({ onStart }) => (
+      <div className="w-full max-w-3xl">
+        <div className="glass-card rounded-3xl p-8 text-center">
+          <h1 className="text-3xl font-bold tracking-tight mb-2">NumeraWealth <span className="text-emerald-400">Trader</span></h1>
+          <p className="text-slate-300 mb-4">Numerology for traders: name + birthdate → today’s finance play.</p>
+          <ul className="text-slate-300 text-left list-disc list-inside space-y-1 mb-6">
+            <li>Life Path, Expression, Soul Urge, Personality</li>
+            <li>Personal Year/Month/Day → finance guidance</li>
+            <li>One free try, then <strong>$1.99 / 30 days</strong></li>
+          </ul>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button onClick={()=>{ track('landing_start'); onStart(); }} className="btn-primary text-white py-2 rounded-lg">Start free try</button>
+            <a href={PAYMENT_LINK_URL} className="btn-ghost py-2 rounded-lg">Unlock now — $1.99</a>
+          </div>
+        </div>
+      </div>
+    );
+
     const Paywall = ({onCheckout, uiError})=>{
       const [busy,setBusy] = useState(false);
+      useEffect(()=>{ track('paywall_open'); },[]);
       return (
         <div className="fixed inset-0 modal-bg flex items-center justify-center p-4">
           <div className="glass-card rounded-2xl max-w-lg w-full p-6">
@@ -399,9 +400,7 @@
               {busy ? 'Starting checkout…' : 'Pay & Unlock'}
             </button>
             {uiError && <div className="mt-3 p-2 rounded-lg bg-red-900/40 text-red-200 border border-red-500/30 text-sm">{uiError}</div>}
-            <p className="text-xs text-slate-400 mt-3">
-              After payment you’ll return here automatically. Access unlocks for 30 days.
-            </p>
+            <p className="text-xs text-slate-400 mt-3">After payment you’ll return here automatically. Access unlocks for 30 days.</p>
           </div>
         </div>
       );
@@ -419,6 +418,7 @@
       const [showPay,setShowPay] = useState(false);
       const [trialNotice,setTrialNotice] = useState('');
       const [uiError,setUiError] = useState('');
+      const [landing,setLanding] = useState(new URLSearchParams(window.location.search).get('landing') === '1');
 
       useEffect(()=>{
         (async ()=>{
@@ -469,10 +469,12 @@
           const status = await checkAccess();
           if (status.active) {
             setAccess(status);
+            track('calculate', { access:'paid' });
             return runCalculations(b, name);
           }
 
           if (!trialUsed) {
+            track('calculate', { access:'trial' });
             runCalculations(b, name);
             markTrialUsed();
             setTrialUsed(true);
@@ -489,6 +491,7 @@
         try {
           setUiError('');
           if (!PAYMENT_LINK_URL) throw new Error('Missing PAYMENT_LINK_URL.');
+          track('checkout_click', { price: 1.99 });
           window.location.href = PAYMENT_LINK_URL;
         } catch (e) { __fatal('Checkout start failed', e); }
       };
@@ -499,12 +502,17 @@
           clearLocalAccess();
           setAccess({ active:false, daysLeft:0 });
           setShowPay(false);
+          track('signout');
         } catch (e) { __fatal('Reset failed', e); }
       };
 
       const accessBadge = access.active
         ? `Access: ${access.daysLeft} day${access.daysLeft===1?'':'s'} left`
         : (trialUsed ? 'Trial used — unlock access' : 'Free trial: 1 calculation');
+
+      if (landing) {
+        return <Landing onStart={()=>setLanding(false)} />;
+      }
 
       return (
         <div className="w-full max-w-4xl">
@@ -577,7 +585,6 @@
                   <Card title="Monthly Forecast (Finance)" value={results.monthlyForecast}/>
                 </div>
 
-                {/* Share Bar */}
                 <ShareBar priceText={PRICE_TEXT} />
               </div>
             )}
